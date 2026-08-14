@@ -1,0 +1,19 @@
+{
+  "name": "aegis-cti",
+  "version": "0.1.0",
+  "description": "Explainable Cyber Threat Intelligence Platform with Evidence Lineage & Controlled Lab Benchmarking",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.9.3",
+    "vitest": "^1.6.1"
+  },
+  "dependencies": {
+    "commander": "^15.0.0"
+  }
+}
