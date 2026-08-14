@@ -1,0 +1,13 @@
+flowchart TD
+  A[SQL transaction] --> B[Authorization context]
+  B --> C[Committed PostgreSQL transaction]
+  C --> D[Raw change record]
+  D --> E[Canonical binary bytes]
+  E --> F[SHA-256 change hash]
+  F --> G[Previous hash link]
+  G --> H[Immutable log]
+  H --> I[Version]
+  I --> J[State leaf hash]
+  J --> K[Merkle tree]
+  K --> L[Checkpoint]
+  L --> M[External anchor - optional]

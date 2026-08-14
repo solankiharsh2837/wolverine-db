@@ -1,0 +1,14 @@
+flowchart TD
+  A[Application / DBA / Migration] --> B[Auth + Context]
+  B --> C[Authorization Ledger]
+  C --> D[PostgreSQL Transaction]
+  D --> E[Current State]
+  D --> F[Change Capture]
+  F --> G[Canonical Encoder]
+  G --> H[Hash Chain + Immutable Log]
+  H --> I[Version and State Engine]
+  I --> J[Merkle Checkpoint]
+  J --> K[External Anchor - optional]
+  H --> L[Integrity Engine]
+  L --> M[Recovery Engine]
+  M --> D

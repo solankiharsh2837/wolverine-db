@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+*.log
+*.tgz
+.env
+.DS_Store
+.system_generated

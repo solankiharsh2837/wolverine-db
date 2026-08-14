@@ -1,0 +1,36 @@
+{
+  "name": "wolverine-db",
+  "version": "0.1.0",
+  "description": "Integrity and recovery framework for PostgreSQL database systems",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "wdb": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "database",
+    "integrity",
+    "merkle-tree",
+    "hash-chain",
+    "postgresql",
+    "recovery",
+    "provenance"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  }
+}

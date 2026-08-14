@@ -1,0 +1,11 @@
+flowchart TD
+  A[Verification request] --> B[Decode canonical records]
+  B --> C[Verify hash and parent links]
+  C --> D[Recompute state leaves]
+  D --> E[Recompute Merkle root]
+  E --> F{Checkpoint / anchor match?}
+  F -->|Yes| G[Verified scope reported]
+  F -->|No| H[Localize divergence]
+  H --> I[Analyze provenance]
+  I --> J[Classify: authorized / unknown / suspicious / unauthorized]
+  J --> K[Create incident or recovery proposal]

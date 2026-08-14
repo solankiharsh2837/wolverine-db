@@ -1,0 +1,11 @@
+flowchart TD
+  A[Integrity incident] --> B[Localize affected scope]
+  B --> C[Identify last trusted basis]
+  C --> D[Reconstruct candidate]
+  D --> E[Compare current and candidate]
+  E --> F[Generate selective recovery proposal]
+  F --> G{Required approval present?}
+  G -->|No| H[Preserve proposal and stop]
+  G -->|Yes| I[Execute protected recovery transaction]
+  I --> J[Create new recovery version]
+  J --> K[Verify and checkpoint]
