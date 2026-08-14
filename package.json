@@ -1,16 +1,23 @@
 {
   "name": "wolverine-db",
   "version": "0.1.0",
-  "description": "Integrity and recovery framework for PostgreSQL database systems",
+  "description": "Deterministic database integrity, Merkle checkpoints, and approval-gated selective recovery for PostgreSQL",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "wdb": "dist/cli/index.js"
+    "wdb": "./dist/cli/index.js"
   },
+  "files": [
+    "dist",
+    "specs",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
     "database",
@@ -19,10 +26,20 @@
     "hash-chain",
     "postgresql",
     "recovery",
-    "provenance"
+    "provenance",
+    "tamper-evident",
+    "security"
   ],
-  "author": "",
+  "author": "solankiharsh2837",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/solankiharsh2837/wolverine-db.git"
+  },
+  "bugs": {
+    "url": "https://github.com/solankiharsh2837/wolverine-db/issues"
+  },
+  "homepage": "https://github.com/solankiharsh2837/wolverine-db#readme",
   "dependencies": {
     "commander": "^12.0.0",
     "pg": "^8.11.3"
