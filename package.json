@@ -17,6 +17,13 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
+    "demo": "tsc && node ./dist/demo/run.js",
+    "demo:v7": "tsc && node ./dist/demo/run_v7.js",
+    "demo:v8": "tsc && node ./dist/demo/run_v8.js",
+    "demo:v9": "tsc && node ./dist/demo/run_v9.js",
+    "demo:v1": "tsc && node ./dist/demo/run_v1.js",
+    "demo:v11": "tsc && node ./dist/demo/run_v11.js",
+    "demo:v12": "tsc && node ./dist/demo/run_v12.js",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
