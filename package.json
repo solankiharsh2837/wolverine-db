@@ -1,7 +1,7 @@
 {
   "name": "wolverine-db",
-  "version": "0.1.0",
-  "description": "Deterministic database integrity, Merkle checkpoints, and approval-gated selective recovery for PostgreSQL",
+  "version": "1.2.0",
+  "description": "Independent cryptographic trust layer for databases: Continuous verified state reconstruction, Byzantine quorum consensus, and immutable trust receipts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "specs",
+    "docs",
     "README.md",
     "LICENSE"
   ],
@@ -35,7 +36,13 @@
     "recovery",
     "provenance",
     "tamper-evident",
-    "security"
+    "security",
+    "byzantine-fault-tolerance",
+    "trust-network",
+    "trust-receipt",
+    "continuous-reconstruction",
+    "zero-trust",
+    "audit-trail"
   ],
   "author": "solankiharsh2837",
   "license": "MIT",
