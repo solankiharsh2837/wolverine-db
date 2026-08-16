@@ -103,3 +103,5 @@ export * from './survivability/cli_survivability.js';
 export * from './postgres/triggers.js';
 export * from './postgres/adapter.js';
 export * from './crypto/canonical.js';
+export * from './trust_network/block.js';
+export * from './sdk/index.js';
