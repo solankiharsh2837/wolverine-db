@@ -3,6 +3,7 @@ import {
   PortableTrustProof,
 } from '../trust_network/types.js';
 import { ImmutableTrustReceipt } from '../bft_hardening/types.js';
+import { ISigningProvider } from '../crypto/signing_provider.js';
 
 export type WolverineNetworkType = 'MANAGED' | 'SELF_HOSTED';
 
@@ -12,8 +13,9 @@ export interface WolverineSdkConfig {
   networkId?: string;
   tenantId: string;
   databaseId: string;
-  customerPubkey: Buffer;
-  customerPrivateKey: crypto.KeyObject;
+  signingProvider?: ISigningProvider;
+  customerPubkey?: Buffer;
+  customerPrivateKey?: crypto.KeyObject;
   apiKey?: string;
   offlineQueueCapacity?: number;
   retryAttempts?: number;

@@ -26,6 +26,8 @@
     "demo:v1": "tsc && node ./dist/demo/run_v1.js",
     "demo:v11": "tsc && node ./dist/demo/run_v11.js",
     "demo:v12": "tsc && node ./dist/demo/run_v12.js",
+    "demo:killer": "tsc && node ./dist/demo/run_killer_demo.js",
+    "demo:ssip": "tsc && node ./dist/demo/run_killer_demo.js",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [

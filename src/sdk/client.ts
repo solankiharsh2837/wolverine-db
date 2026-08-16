@@ -11,12 +11,13 @@ import {
   PortableTrustProof,
 } from '../trust_network/types.js';
 import { ImmutableTrustReceipt } from '../bft_hardening/types.js';
-import { createSignedCustomerCommitment } from '../trust_network/commitment.js';
+import { computeTrustCommitmentDigest } from '../trust_network/commitment.js';
 import { computeCheckpointDigest } from '../checkpoint/anchor.js';
 import { OfflineTrustProofVerifier } from '../trust_network/proof.js';
 import { ImmutableTrustReceiptGenerator } from '../trust_receipt/receipt.js';
 import { WolverineError, WolverineErrorCode } from '../errors/index.js';
 import { TrustGatewayServer } from '../runtime/gateway.js';
+import { ISigningProvider, LocalSoftwareSigningProvider } from '../crypto/signing_provider.js';
 
 export class WolverineClient {
   public readonly endpoint: string;
@@ -26,7 +27,7 @@ export class WolverineClient {
   public readonly databaseId: string;
   public readonly customerPubkey: Buffer;
   public readonly apiKey?: string | undefined;
-  private customerPrivateKey: crypto.KeyObject;
+  public readonly signingProvider: ISigningProvider;
 
   private lastFinalizedCommitmentDigest: Buffer = Buffer.alloc(32, 0);
   private localProofCache = new Map<string, PortableTrustProof>();
@@ -35,16 +36,26 @@ export class WolverineClient {
   private gatewayDirectRef?: TrustGatewayServer | undefined;
 
   constructor(config: WolverineSdkConfig, gatewayRef?: TrustGatewayServer) {
-    if (!config.customerPrivateKey) {
-      throw new WolverineError(
-        WolverineErrorCode.MISSING_SECRET_KEY,
-        'WolverineClient requires customerPrivateKey for signing cryptographic commitments'
-      );
-    }
     if (!config.tenantId || !config.databaseId) {
       throw new WolverineError(
         WolverineErrorCode.INVALID_CONFIGURATION,
         'WolverineClient requires non-empty tenantId and databaseId'
+      );
+    }
+
+    if (config.signingProvider) {
+      this.signingProvider = config.signingProvider;
+      this.customerPubkey = config.customerPubkey ?? this.signingProvider.getPublicKey();
+    } else if (config.customerPrivateKey) {
+      this.signingProvider = new LocalSoftwareSigningProvider(
+        config.customerPrivateKey,
+        config.customerPubkey
+      );
+      this.customerPubkey = this.signingProvider.getPublicKey();
+    } else {
+      throw new WolverineError(
+        WolverineErrorCode.MISSING_SECRET_KEY,
+        'WolverineClient requires a signingProvider (e.g. AWS KMS, GCP KMS, Vault) or customerPrivateKey for signing commitments'
       );
     }
 
@@ -53,8 +64,6 @@ export class WolverineClient {
     this.networkId = config.networkId ?? (this.networkType === 'MANAGED' ? 'wolverine-cloud-prod' : 'self-hosted-cluster');
     this.tenantId = config.tenantId;
     this.databaseId = config.databaseId;
-    this.customerPubkey = config.customerPubkey;
-    this.customerPrivateKey = config.customerPrivateKey;
     if (config.apiKey !== undefined) {
       this.apiKey = config.apiKey;
     }
@@ -74,7 +83,8 @@ export class WolverineClient {
 
   /**
    * Anchors a database checkpoint to the Wolverine Trust Network.
-   * Signs the 32-byte Merkle root, dispatches to validators, and receives BFT finality proof.
+   * Signs the 32-byte Merkle root via KMS/HSM/Software signing provider,
+   * dispatches to validators, and receives BFT finality proof.
    */
   public async anchorCheckpoint(
     params: AnchorCheckpointParams
@@ -91,20 +101,30 @@ export class WolverineClient {
     });
     const commitmentId = crypto.randomUUID();
 
-    const commitment = createSignedCustomerCommitment(
-      {
-        commitmentId,
-        tenantId: this.tenantId,
-        databaseId: this.databaseId,
-        checkpointId: params.checkpointId,
-        commitSeq: params.commitSeq,
-        checkpointDigest,
-        previousTrustCommitment: this.lastFinalizedCommitmentDigest,
-        epoch: 1,
-      },
-      this.customerPrivateKey,
-      this.customerPubkey
-    );
+    const unsignedCommitment = {
+      commitmentId,
+      tenantId: this.tenantId,
+      databaseId: this.databaseId,
+      checkpointId: params.checkpointId,
+      commitSeq: params.commitSeq,
+      checkpointDigest,
+      previousTrustCommitment: this.lastFinalizedCommitmentDigest,
+      protocolVersion: params.protocolVersion,
+      logicalTimestamp: params.createdAtUs,
+      epoch: 1,
+      validatorSetId: 'valset-genesis',
+      customerPubkey: this.customerPubkey,
+    };
+
+    const commitmentDigest = computeTrustCommitmentDigest(unsignedCommitment);
+    const customerSignature = await this.signingProvider.sign(commitmentDigest);
+
+    const commitment: TrustCommitment = {
+      ...unsignedCommitment,
+      customerPubkey: this.customerPubkey,
+      customerSignature,
+      commitmentDigest,
+    };
 
     if (this.gatewayDirectRef) {
       try {

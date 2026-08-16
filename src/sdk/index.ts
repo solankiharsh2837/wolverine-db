@@ -16,3 +16,4 @@ export * from '../trust_network/proof.js';
 export * from '../trust_network/types.js';
 export * from '../bft_hardening/types.js';
 export * from '../trust_receipt/receipt.js';
+export * from '../crypto/signing_provider.js';

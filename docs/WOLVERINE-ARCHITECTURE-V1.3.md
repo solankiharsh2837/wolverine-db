@@ -6,7 +6,7 @@
 
 ## 1. What WolverineDB Is
 
-**WolverineDB** is an independent cryptographic trust and continuous verified state reconstruction layer for relational and document databases (PostgreSQL, MySQL, SQLite). 
+**WolverineDB** is an independent cryptographic trust boundary and continuous verified state reconstruction layer for relational and document databases (PostgreSQL, MySQL, SQLite). 
 
 It continuously audits database mutation streams, maintains immutable hash chains and Merkle state roots, and anchors state commitments into the **Wolverine Trust Network**—an independent, permissioned Byzantine Fault Tolerant (BFT) trust ledger.
 
@@ -14,35 +14,37 @@ It continuously audits database mutation streams, maintains immutable hash chain
 CUSTOMER DATABASE
        │
        ▼
-WOLVERINE DB
+WOLVERINE DB CORE (OSS)
        │
-       ├── CDC / WAL
-       ├── HASH CHAIN
-       ├── MERKLE STATE
-       ├── RECONSTRUCTION
-       └── RECOVERY
+       ├── CDC / WAL Capture (PostgresAdapter)
+       ├── Canonical Hash Chains (SHA-256)
+       ├── RFC 6962 Merkle State Roots
+       ├── Dependency Graph Analysis
+       └── Continuous State Reconstruction
               │
               ▼
-       WOLVERINE SDK
-              │
+       WOLVERINE CLIENT SDK
+              │ (SigningProvider: KMS / HSM / Software)
               ▼
       EXTERNAL TRUST NETWORK
               │
        ┌──────┴──────┐
        ▼             ▼
  MANAGED CLOUD    SELF-HOSTED
+ (Wolverine SaaS) (Sovereign Cluster)
        │             │
        └──────┬──────┘
               ▼
        BFT TRUST LEDGER
+       (4-of-5 Byzantine Quorum)
               │
               ▼
-       IMMUTABLE RECEIPT
+       IMMUTABLE TRUST RECEIPT
               │
        ┌──────┴──────┐
        ▼             ▼
- OFFLINE VERIFY   OPTIONAL
-                  PUBLIC CHAIN
+ OFFLINE VERIFIER  OPTIONAL PUBLIC
+ (Zero Network)    CHAIN BRIDGE (EVM)
 ```
 
 ---
@@ -62,13 +64,13 @@ Traditional databases suffer from the **Administrative State Vulnerability**:
 
 The commercial product is the **Wolverine External Trust Anchoring Service**. Customers choose between two deployment models:
 
-### Deployment Model A: Managed Wolverine Trust Network (Wolverine Cloud)
+### Deployment Model A: Managed Wolverine Trust Network (Wolverine Cloud SaaS)
 - **Target**: High-velocity startups, FinTechs, healthcare, and SaaS enterprises.
 - **Workflow**:
   1. The customer installs the lightweight `WolverineClient` SDK / Evidence Agent.
-  2. The local SDK captures CDC/WAL events, computes 32-byte Merkle roots, and signs commitments.
-  3. **Zero customer data leaves the customer's VPC**—only 32-byte cryptographic fingerprints and metadata leave the boundary.
-  4. Wolverine Cloud's geographically distributed validator cluster verifies sequence monotonicity and finalizes commitments at 4-of-5 quorum.
+  2. The local SDK captures CDC/WAL events, computes 32-byte Merkle roots, and signs commitments via **Cloud KMS (AWS/GCP/Azure) or Hardware HSM**.
+  3. **Zero customer data leaves the customer's VPC**—only 32-byte cryptographic fingerprints and sequence metadata leave the boundary.
+  4. Wolverine Cloud's distributed validator cluster verifies sequence monotonicity and finalizes commitments at 4-of-5 quorum.
   5. The customer receives portable **Immutable Trust Receipts** (`receipt.json`).
 
 ### Deployment Model B: Self-Hosted Wolverine Trust Network (Sovereignty)
@@ -81,144 +83,101 @@ The commercial product is the **Wolverine External Trust Anchoring Service**. Cu
 
 ---
 
-## 4. Wolverine Trust Block & Ledger Specification
+## 4. Hardware Security & Cloud KMS Key Abstraction
 
-Wolverine does not rely on Ethereum or external blockchains for its primary operation. It operates a native, high-performance permissioned cryptographic ledger with BFT finality:
+To ensure commercial credibility, applications do not hold raw Ed25519 private keys in application memory. WolverineDB provides the `ISigningProvider` interface:
+
+```text
+SigningProvider
+ ├── LocalSoftwareKeyProvider   (Development / Local testing)
+ ├── AwsKmsSigningProvider      (AWS KMS Asymmetric Sign)
+ ├── GcpKmsSigningProvider      (Google Cloud Cloud HSM / KMS)
+ ├── VaultSigningProvider       (HashiCorp Vault / Azure Key Vault)
+ └── Pkcs11HsmSigningProvider   (Hardware Security Module / Sovereign)
+```
 
 ```typescript
-export interface WolverineTrustBlock {
-  networkId: string;           // 'wolverine-managed-v1' or 'self-hosted:tenant-id'
-  epoch: number;               // Dynamic validator rotation epoch
-  blockHeight: bigint;         // Monotonic ledger block index (1, 2, 3...)
-  previousBlockHash: Buffer;   // 32-byte SHA-256 link to prior block
-  timestampUs: bigint;         // Deterministic timestamp of block creation
-  transactionsRoot: Buffer;    // Merkle root of customer commitments in block
-  stateRoot: Buffer;           // Incremental Merkle state root of entire ledger
-  validatorSetHash: Buffer;    // SHA-256 digest of active validator public keys
-  quorumCertificate: QuorumCertificate; // 4-of-5 Ed25519 validator signatures
-  blockHash: Buffer;           // Canonical SHA-256 digest of header
-}
-```
-
-### Properties
-- **No Gas Fees / No Mining**: Pure Byzantine consensus among authorized validator daemons.
-- **Sub-Second BFT Finality**: Commitments are attested and finalized in parallel.
-- **Deterministic Hash Chains**: Every block cryptographically binds `previousBlockHash`.
-
----
-
-## 5. Optional Third-Party Public Chain Anchoring Bridge
-
-For customers who require public timestamping (e.g. public disclosure compliance), Wolverine provides an optional bridge to Ethereum / EVM chains (`EvmAnchorBridge`):
-
-$$\text{Finalized Block State Root} \xrightarrow{\text{Bridge}} \text{Ethereum Smart Contract Anchor}$$
-
-- **Privacy Invariant**: The public chain **never** sees SQL statements, row contents, PII, or table names—only the 32-byte Merkle root.
-- **Decoupled Fallback**: If Ethereum RPC times out or reorgs occur, Wolverine's native BFT Trust Network continues operating normally.
-
----
-
-## 6. Immutable Trust Receipts & Standalone Offline Verification
-
-When a commitment is finalized, Wolverine issues a self-contained **Immutable Trust Receipt**:
-
-```json
-{
-  "receiptId": "rcpt-5000-08890de5",
-  "networkId": "wolverine-cloud-prod",
-  "tenantId": "enterprise-alpha",
-  "databaseId": "production-orders",
-  "commitSeq": 5000,
-  "checkpointId": "00000000-0000-0000-0000-000000005000",
-  "checkpointDigestHex": "b40a77f6d9d96964...",
-  "ledgerSeq": 42,
-  "epoch": 1,
-  "merkleStateRootHex": "60ccacef9f26d979...",
-  "quorumDigestHex": "2ce6b1e63aba0d61...",
-  "validatorCount": 5,
-  "totalValidators": 5,
-  "signedAtUs": 1786841257849000,
-  "status": "AUTHENTIC_RECEIPT"
-}
-```
-
-### The Standalone Verifier Rule
-Anyone can verify this receipt offline with **zero network requests**:
-```bash
-wdb receipt verify ./receipt-5000.json
-```
-```text
-================================================================================
-                     WOLVERINE STANDALONE PROOF VERIFICATION                   
-================================================================================
-Tenant ID:                enterprise-alpha
-Database ID:              production-orders
-Commit Sequence:          5000
-BFT Quorum Certificate:   5 / 5 Validators Attested
-Verification Verdict:     AUTHENTIC & IMMUTABLE (PASS)
-Zero Trust Verification:  PASSED WITHOUT SERVER OR DATABASE ACCESS
-================================================================================
+// Customer connects using AWS KMS Key ARN instead of raw software private keys
+const wolverine = await WolverineClient.connect({
+  endpoint: 'https://trust.wolverine-db.com/v1',
+  networkType: 'MANAGED',
+  tenantId: 'enterprise-fintech',
+  databaseId: 'production-ledger',
+  signingProvider: new CloudKmsSigningProvider({
+    provider: 'AWS_KMS',
+    keyArn: 'arn:aws:kms:us-east-1:123456789012:key/wolverine-signing-key',
+    region: 'us-east-1',
+    publicKey: customerKmsPublicKey,
+  }),
+});
 ```
 
 ---
 
-## 7. Threat Model & Trust Assumptions
+## 5. Merkle State Commitment vs. State Reconstruction
 
-| Domain | Trust Level | Failure Assumptions |
-| :--- | :--- | :--- |
-| **Customer Database** | **UNTRUSTED** | May experience arbitrary data deletion, tampering, or silent table corruption. |
-| **Customer DBA** | **POTENTIALLY MALICIOUS** | Has direct SQL/root access; cannot forge Ed25519 signatures or rewrite finalized receipts. |
-| **Trust Gateway** | **UNTRUSTED ROUTER** | May crash, delay packets, or try to forge commitments; cannot forge customer or validator signatures. |
-| **Individual Validator** | **POTENTIALLY BYZANTINE** | Up to $f < N/3$ validators can equivocate, crash, collude, or forge attestations without violating safety. |
-| **Wolverine Cloud Network** | **TRUSTED VIA QUORUM ONLY** | The service itself can disappear; offline receipts remain verifiable forever. |
+A critical architectural distinction:
+
+$$\begin{aligned}
+\text{\bf 32-Byte Merkle Root} &\implies \text{\bf State Commitment Proof ("What state existed at time } T \text{")} \\
+\text{\bf Continuous Reconstruction Engine} &\implies \text{\bf Complete Data Recovery ("How to recover full rows and tables")}
+\end{aligned}$$
+
+- **The External Anchor**: Proves that a specific database state with Merkle root $R$ existed at sequence $S$ and was attested by Quorum.
+- **The Reconstruction Engine**: Combines the trusted checkpoint anchor with verified WORM mutation logs, provenance graphs, and authorized replay to rebuild the full PostgreSQL tables and rows.
 
 ---
 
-## 8. Continuous Verified State Reconstruction
-
-When a database intrusion or disaster occurs, Wolverine does not restore dumb backups. It executes **Continuous Verified State Reconstruction**:
+## 6. The Complete External Anchor Lifecycle & Adversarial Defense
 
 ```text
-Trusted External Checkpoint (Receipt #5000)
-             ↓
-Verified Mutation Evidence (WAL / CDC)
-             ↓
-Authorization & Provenance Validation
-             ↓
-Dependency Graph Analysis (fieldSet.old state continuity)
-             ↓
-Deterministic State Replay
-             ↓
-Maximum Reconstructable State (Seq 5037)
-             ↓
-Recovery State Certificate
-             ↓
-NEW EXTERNALLY ANCHORED TRUST RECEIPT (#5038)
-```
+[ACT I] Legitimate PostgreSQL Operations
+  ├── Orders placed: Balance = $10,000
+  ├── Checkpoint #1842 computed (Merkle Root = 0x5a4f...)
+  ├── SDK signs commitment via Cloud KMS
+  ├── Wolverine Trust Network reaches 5/5 Byzantine Quorum
+  └── Immutable Trust Receipt (receipt-1842.json) generated & saved
 
-**Post-Recovery Invariant**: The reconstructed state immediately forms a new, externally anchored Trust Checkpoint, creating an unbroken chain of cryptographic custody.
+[ACT II] Rogue DBA / Attacker Compromise
+  ├── Attacker gains PostgreSQL superuser / root credentials
+  ├── Attacker updates Balance = $1,000,000 directly via SQL
+  ├── Attacker deletes local audit tables (pg_audit, audit_log)
+  ├── Attacker alters local WAL replication logs
+  └── Attacker attempts to publish rogue Checkpoint #1842 to Wolverine Trust Network
+
+[ACT III] Byzantine Network Defense
+  ├── 5/5 Validators reject the rogue commitment (CONFLICTING_COMMITMENT)
+  ├── Sequence monotonicity and previous commitment hash invariants hold
+  └── Wolverine Trust Ledger remains 100% untouched and authentic
+
+[ACT IV] Air-Gapped Standalone Verification
+  ├── Auditor runs: wdb receipt verify ./receipt-1842.json
+  ├── Zero network requests, zero server calls, zero database access
+  └── Cryptographic Verdict: AUTHENTIC & IMMUTABLE (PASS)
+      (Mathematically proves original state was $10,000, exposing the DBA attack)
+```
 
 ---
 
-## 9. Subsystem Production Maturity Classification
+## 7. Subsystem Maturity & Production Classification
 
-| Subsystem | Maturity Classification | Current Implementation Status |
+| Subsystem | Maturity Classification | Notes |
 | :--- | :--- | :--- |
-| **Cryptographic Primitives** | **REAL PRODUCTION** | RFC 6962 Merkle trees, RFC 8785 JSON canonicalization, `encodeProtocolTuple`, Ed25519 signatures, SHA-256 hash chains. |
+| **Cryptographic Primitives** | **REAL PRODUCTION** | Merkle trees with bound leaf counts, `encodeProtocolTuple`, Ed25519 signatures, SHA-256 hash chains. |
 | **Concurrency & Storage** | **REAL PRODUCTION** | Serialized atomic ledger append queue, POSIX `O_EXCL` (`wx`) atomic checkpoint stores, crash-safe persistence journals. |
-| **SDK & Ingestion Engine** | **REAL PRODUCTION** | `WolverineClient`, `WalNormalizer`, `PostgresAdapter` CDC polling, offline buffering queues, automatic retry backoff. |
-| **BFT Consensus & Ledger** | **REAL PRODUCTION / EMBEDDABLE** | 4-of-5 BFT quorum engine, deterministic block headers, dynamic epoch rotation, dual-signed key rotation. |
-| **Network Transport** | **REFERENCE / PLUGGABLE** | In-process asynchronous RPC transport with structured failure telemetry (`TIMEOUT`, `PEER_REJECTED`, `UNREACHABLE`). Ready for HTTP/gRPC transport bindings. |
-| **Public Chain Bridge** | **REFERENCE IMPLEMENTATION** | `EvmAnchorBridge` supporting on-chain registration, confirmation tracking, and reorg resilience. |
+| **Customer SDK & Ingestion** | **REAL PRODUCTION** | `WolverineClient`, `ISigningProvider`, `WalNormalizer`, `PostgresAdapter` CDC polling, offline buffering queues. |
+| **BFT Consensus & Ledger** | **PRODUCTION REFERENCE** | 4-of-5 BFT quorum engine, deterministic block headers, dynamic epoch rotation, dual-signed key rotation. |
+| **Network Transport** | **REFERENCE / PLUGGABLE** | Asynchronous RPC transport with structured failure telemetry (`TIMEOUT`, `PEER_REJECTED`, `UNREACHABLE`). Ready for HTTP/gRPC. |
+| **Public Chain Bridge** | **OPTIONAL BRIDGE** | `EvmAnchorBridge` for periodic cross-domain timestamping on Ethereum/Base/Arbitrum. |
 
 ---
 
-## 10. Commercial SaaS Tiering Architecture
+## 8. Commercial SaaS Tiering Architecture
 
 | Tier | Deployment | Anchoring Frequency | Validators | Key Feature |
 | :--- | :--- | :--- | :--- | :--- |
 | **Core (OSS)** | On-Premise | Local Checkpoints | Local Engine | Open-source hash chains & verified reconstruction |
-| **Cloud Professional** | Wolverine Cloud | Every 1 Minute | 5 Managed Nodes | Managed BFT consensus + 30-day proof retention |
+| **Cloud Professional** | Wolverine Cloud | Every 1 Minute | 5 Managed Nodes | Managed BFT consensus + Cloud KMS support + 30-day proof retention |
 | **Cloud Enterprise** | Wolverine Cloud | Continuous / Real-time | 7 Global Nodes | Real-time finality + SLA guarantee + offline receipt export |
 | **Sovereign** | Self-Hosted | Customer Configured | Customer Cluster | Sovereign enterprise deployment with zero external dependencies |
 | **Public Anchor Addon** | Cross-Domain | Daily / Hourly | EVM Chain | Periodic 32-byte Merkle root anchoring to Ethereum / Base / Arbitrum |
