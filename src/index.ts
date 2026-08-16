@@ -101,4 +101,5 @@ export * from './survivability/customer_sla_manager.js';
 export * from './survivability/catastrophic_cluster.js';
 export * from './survivability/cli_survivability.js';
 export * from './postgres/triggers.js';
+export * from './postgres/adapter.js';
 export * from './crypto/canonical.js';

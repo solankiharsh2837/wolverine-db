@@ -60,3 +60,19 @@ export interface TrustTimeRecord {
   finalizedAtUs: bigint;
   quorumDigestHex: string;
 }
+
+export type PeerFailureReason =
+  | 'TIMEOUT'
+  | 'UNREACHABLE'
+  | 'PEER_REJECTED'
+  | 'MALFORMED_RESPONSE'
+  | 'AUTH_FAILURE'
+  | 'INTERNAL_ERROR';
+
+export interface PeerFailureRecord {
+  peerId: string;
+  endpoint: string;
+  reason: PeerFailureReason;
+  errorMessage: string;
+  timestampUs: bigint;
+}

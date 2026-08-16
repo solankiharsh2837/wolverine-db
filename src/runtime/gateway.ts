@@ -1,6 +1,7 @@
 import {
   TrustGatewayConfig,
   AttestRpcResponse,
+  PeerFailureRecord,
 } from './types.js';
 import {
   TrustCommitment,
@@ -11,25 +12,36 @@ import {
 import { WolverineTrustLedger } from '../trust_network/ledger.js';
 import { TrustConsensusEngine } from '../trust_network/consensus.js';
 import { PortableTrustProofGenerator } from '../trust_network/proof.js';
-import { INetworkTransport } from './network_transport.js';
 import { WolverineError, WolverineErrorCode } from '../errors/index.js';
+import { INetworkTransport } from './network_transport.js';
+
+export interface GatewayTenantRegistration {
+  tenantId: string;
+  customerPubkey: Buffer;
+  databases: Set<string>;
+  tier: string;
+}
 
 export class TrustGatewayServer {
+  public readonly gatewayId: string;
   public readonly config: TrustGatewayConfig;
   private transport: INetworkTransport;
   private ledger: WolverineTrustLedger;
   private consensusEngine: TrustConsensusEngine;
-  private tenants = new Map<
-    string,
-    { tenantId: string; customerPubkey: Buffer; databases: Set<string>; tier: string }
-  >();
+  private tenants = new Map<string, GatewayTenantRegistration>();
   private validatorKeys = new Map<string, Buffer>();
   private isOnline: boolean = true;
+  private peerFailures: PeerFailureRecord[] = [];
 
-  constructor(config: TrustGatewayConfig, transport: INetworkTransport) {
+  constructor(
+    config: TrustGatewayConfig,
+    transport: INetworkTransport,
+    ledger?: WolverineTrustLedger
+  ) {
+    this.gatewayId = config.gatewayId;
     this.config = config;
     this.transport = transport;
-    this.ledger = new WolverineTrustLedger();
+    this.ledger = ledger ?? new WolverineTrustLedger();
     this.consensusEngine = new TrustConsensusEngine(
       this.ledger,
       config.requiredQuorum,
@@ -63,6 +75,14 @@ export class TrustGatewayServer {
 
   public setOnlineStatus(isOnline: boolean): void {
     this.isOnline = isOnline;
+  }
+
+  public getPeerFailures(): PeerFailureRecord[] {
+    return [...this.peerFailures];
+  }
+
+  public clearPeerFailures(): void {
+    this.peerFailures = [];
   }
 
   public async ingestCommitment(commitment: TrustCommitment): Promise<{
@@ -99,8 +119,30 @@ export class TrustGatewayServer {
           commitment,
           tenantPubkeyHex: tenant.customerPubkey.toString('hex'),
         });
-        return response.success && response.attestation ? response.attestation : null;
-      } catch {
+
+        if (!response.success) {
+          const failure: PeerFailureRecord = {
+            peerId: v.validatorId,
+            endpoint: v.endpoint,
+            reason: 'PEER_REJECTED',
+            errorMessage: response.error ?? 'Validator rejected attestation',
+            timestampUs: BigInt(Date.now()) * 1000n,
+          };
+          this.peerFailures.push(failure);
+          return null;
+        }
+
+        return response.attestation ?? null;
+      } catch (err: any) {
+        const reason = err?.message?.includes('timeout') ? 'TIMEOUT' : 'UNREACHABLE';
+        const failure: PeerFailureRecord = {
+          peerId: v.validatorId,
+          endpoint: v.endpoint,
+          reason,
+          errorMessage: err?.message ?? 'Network transport failure',
+          timestampUs: BigInt(Date.now()) * 1000n,
+        };
+        this.peerFailures.push(failure);
         return null;
       }
     });
@@ -119,8 +161,14 @@ export class TrustGatewayServer {
     const replicatePromises = this.config.replicaEndpoints.map(async (r) => {
       try {
         await this.transport.sendReplicateRpc(r.endpoint, { record: ledgerRecord });
-      } catch {
-        // Replica failure handled gracefully
+      } catch (err: any) {
+        this.peerFailures.push({
+          peerId: r.replicaId,
+          endpoint: r.endpoint,
+          reason: 'UNREACHABLE',
+          errorMessage: err?.message ?? 'Replica replication failed',
+          timestampUs: BigInt(Date.now()) * 1000n,
+        });
       }
     });
     await Promise.all(replicatePromises);

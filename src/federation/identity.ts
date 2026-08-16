@@ -24,13 +24,19 @@ export function computeNodeAttestationDigest(
 export class NodeRegistry {
   private nodes = new Map<string, NodeIdentity>();
 
+  /**
+   * Registers a node in the federation registry with strict cryptographic attestation.
+   * If a privateKey is provided, signs the attestation and sets status to 'TRUSTED'.
+   * If no valid signature is provided, node status is 'UNATTESTED' (never falsely trusted).
+   */
   public registerNode(
     nodeId: string,
     publicKey: Buffer,
     capabilities: NodeCapability[],
     organizationId: string,
     clusterId: string,
-    privateKey?: crypto.KeyObject
+    privateKey?: crypto.KeyObject,
+    providedSignature?: Buffer
   ): NodeIdentity {
     if (this.nodes.has(nodeId)) {
       throw new WolverineError(
@@ -48,9 +54,31 @@ export class NodeRegistry {
       clusterId
     );
 
-    let attestationSignature = Buffer.alloc(64, 0);
+    let attestationSignature: Buffer;
+    let status: NodeTrustStatus;
+
     if (privateKey) {
+      // Derive public key to ensure correspondence
+      const derivedPub = crypto
+        .createPublicKey(privateKey)
+        .export({ type: 'spki', format: 'der' })
+        .subarray(-32);
+
+      if (Buffer.compare(derivedPub, publicKey) !== 0) {
+        throw new WolverineError(
+          WolverineErrorCode.UNAUTHORIZED_MUTATION,
+          `Keypair correspondence failure: privateKey does not derive public key for node ${nodeId}`
+        );
+      }
+
       attestationSignature = crypto.sign(null, attestationDigest, privateKey);
+      status = 'TRUSTED';
+    } else if (providedSignature) {
+      attestationSignature = providedSignature;
+      status = 'ATTESTATION_PENDING';
+    } else {
+      attestationSignature = Buffer.alloc(64, 0);
+      status = 'UNATTESTED';
     }
 
     const identity: NodeIdentity = {
@@ -60,9 +88,18 @@ export class NodeRegistry {
       creationEpochUs,
       organizationId,
       clusterId,
-      status: 'TRUSTED',
+      status,
       attestationSignature,
     };
+
+    // If attestation was pending with provided signature, verify it
+    if (status === 'ATTESTATION_PENDING') {
+      if (this.verifyNodeIdentity(identity)) {
+        identity.status = 'TRUSTED';
+      } else {
+        identity.status = 'UNATTESTED';
+      }
+    }
 
     this.nodes.set(nodeId, identity);
     return identity;
@@ -83,9 +120,15 @@ export class NodeRegistry {
     node.status = status;
   }
 
+  /**
+   * Cryptographically verifies whether a node is currently trusted.
+   * Requires status == 'TRUSTED' and a mathematically valid Ed25519 attestation signature.
+   */
   public isNodeTrusted(nodeId: string): boolean {
     const node = this.nodes.get(nodeId);
-    return !!node && node.status === 'TRUSTED';
+    if (!node) return false;
+    if (node.status !== 'TRUSTED') return false;
+    return this.verifyNodeIdentity(node);
   }
 
   public verifyNodeIdentity(identity: NodeIdentity): boolean {

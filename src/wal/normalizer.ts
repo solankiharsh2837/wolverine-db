@@ -1,9 +1,11 @@
 import { ChangeRecordData, MutationOperation } from '../protocol/types.js';
+import { validateChangeRecordData } from '../protocol/validators.js';
 import { WalTransactionBlock } from './types.js';
 import { encodePrimaryKeyTuple } from '../binary/record_id.js';
 import { canonicalizeJson } from '../binary/c14n.js';
 import { encodeBinaryRecord, TaggedField } from '../binary/encoder.js';
 import { computeChangeHash } from '../crypto/hash.js';
+import { WolverineError, WolverineErrorCode } from '../errors/index.js';
 
 export interface NormalizedWalChange {
   changeRecordData: ChangeRecordData;
@@ -26,6 +28,12 @@ export class WalNormalizer {
     let currentPrevHash = Buffer.from(previousHash);
 
     for (const mutation of block.mutations) {
+      if (!mutation.schema || !mutation.table) {
+        throw new WolverineError(
+          WolverineErrorCode.MALFORMED_FIELD_PAYLOAD,
+          `Invalid table identifier "${mutation.schema}.${mutation.table}" (must be "schema.table")`
+        );
+      }
       const tableId = `${mutation.schema}.${mutation.table}`;
 
       // If protected tables filter is active and this table is not included, skip
@@ -103,6 +111,9 @@ export class WalNormalizer {
         { tag: 9, typeTag: 8, payload: provenanceBuf },
         { tag: 10, typeTag: 7, payload: currentPrevHash },
       ];
+
+      // Enforce structural & semantic validation
+      validateChangeRecordData(changeRecordData);
 
       const recordBytes = encodeBinaryRecord(1, fields);
       const changeHash = computeChangeHash(recordBytes, currentPrevHash);

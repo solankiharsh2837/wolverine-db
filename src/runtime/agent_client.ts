@@ -30,6 +30,12 @@ export class WolverineEvidenceAgentClient {
   private offlineQueue: TrustCommitment[] = [];
 
   constructor(config: EvidenceAgentClientConfig) {
+    if (!config.customerPrivateKey) {
+      throw new WolverineError(
+        WolverineErrorCode.MISSING_SECRET_KEY,
+        'Evidence agent client requires customerPrivateKey for signing commitments'
+      );
+    }
     this.tenantId = config.tenantId;
     this.databaseId = config.databaseId;
     this.customerPubkey = config.customerPubkey;

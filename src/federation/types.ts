@@ -1,6 +1,13 @@
 import { SecurityEventEnvelope } from '../fabric/types.js';
 
-export type NodeTrustStatus = 'TRUSTED' | 'DEGRADED' | 'QUARANTINED' | 'REVOKED';
+export type NodeTrustStatus =
+  | 'REGISTERED'
+  | 'ATTESTATION_PENDING'
+  | 'TRUSTED'
+  | 'DEGRADED'
+  | 'QUARANTINED'
+  | 'REVOKED'
+  | 'UNATTESTED';
 
 export type NodeCapability =
   | 'DATABASE_MUTATION_CAPTURE'
