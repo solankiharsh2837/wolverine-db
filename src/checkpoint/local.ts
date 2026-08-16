@@ -75,32 +75,34 @@ export class LocalCheckpointStore implements CheckpointStore {
   public async put(checkpoint: AnchoredCheckpoint): Promise<void> {
     await this.init();
     const filePath = this.getFilePath(checkpoint.checkpointId);
+    const serialized = serializeCheckpoint(checkpoint);
 
     try {
-      const existingData = await fs.readFile(filePath, 'utf8');
-      const existing = parseCheckpointJson(existingData);
-
-      const existingDigest = Buffer.isBuffer(existing.digest) ? existing.digest : Buffer.from((existing.digest as any), 'hex');
-      const newDigest = Buffer.isBuffer(checkpoint.digest) ? checkpoint.digest : Buffer.from((checkpoint.digest as any), 'hex');
-
-      if (!timingSafeEqualHashes(existingDigest, newDigest)) {
-        throw new WolverineError(
-          WolverineErrorCode.ANCHOR_VERIFICATION_FAILED,
-          `CheckpointConflictError: Checkpoint ${checkpoint.checkpointId} already exists with differing digest`
-        );
-      }
-      return; // Idempotent put
+      // Atomic exclusive creation: fails with EEXIST if already present
+      await fs.writeFile(filePath, serialized, { encoding: 'utf8', mode: 0o444, flag: 'wx' });
     } catch (err: any) {
-      if (err.code !== 'ENOENT' && !(err instanceof WolverineError)) {
-        throw err;
-      }
-      if (err instanceof WolverineError) {
-        throw err;
-      }
-    }
+      if (err.code === 'EEXIST') {
+        // File already exists -> Read and verify cryptographic idempotence
+        const existingData = await fs.readFile(filePath, 'utf8');
+        const existing = parseCheckpointJson(existingData);
 
-    const serialized = serializeCheckpoint(checkpoint);
-    await fs.writeFile(filePath, serialized, { encoding: 'utf8', mode: 0o444 });
+        const existingDigest = Buffer.isBuffer(existing.digest)
+          ? existing.digest
+          : Buffer.from(existing.digest as any, 'hex');
+        const newDigest = Buffer.isBuffer(checkpoint.digest)
+          ? checkpoint.digest
+          : Buffer.from(checkpoint.digest as any, 'hex');
+
+        if (!timingSafeEqualHashes(existingDigest, newDigest)) {
+          throw new WolverineError(
+            WolverineErrorCode.ANCHOR_VERIFICATION_FAILED,
+            `CheckpointConflictError: Checkpoint ${checkpoint.checkpointId} already exists with differing digest`
+          );
+        }
+        return; // Idempotent put
+      }
+      throw err;
+    }
   }
 
   public async get(checkpointId: string): Promise<AnchoredCheckpoint | null> {

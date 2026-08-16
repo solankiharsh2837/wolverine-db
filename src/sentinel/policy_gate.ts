@@ -13,6 +13,22 @@ export interface PolicyGateResult {
   evaluatedProposal: AdvisoryRecoveryProposal;
 }
 
+/**
+ * Strictly evaluates whether a table belongs to a protected scope without substring/prefix leakage.
+ */
+export function matchesProtectedScope(tableName: string, protectedScope: string): boolean {
+  if (!tableName || !protectedScope) return false;
+  if (protectedScope === '*' || protectedScope === 'global') return true;
+  if (protectedScope === tableName) return true;
+
+  if (protectedScope.endsWith('.*')) {
+    const schema = protectedScope.slice(0, -2);
+    return tableName.startsWith(schema + '.') && tableName.lastIndexOf('.') === schema.length;
+  }
+
+  return false;
+}
+
 export class PolicyGate {
   /**
    * Evaluates an advisory proposal against mathematical and cryptographic invariants.
@@ -33,7 +49,7 @@ export class PolicyGate {
     }
 
     for (const record of proposal.affectedRecords) {
-      if (!record.tableName.startsWith(proposal.protectedScope) && !proposal.protectedScope.includes(record.tableName)) {
+      if (!matchesProtectedScope(record.tableName, proposal.protectedScope)) {
         proposal.status = 'POLICY_REJECTED';
         throw new WolverineError(
           WolverineErrorCode.UNAUTHORIZED_MUTATION,
@@ -58,38 +74,48 @@ export class PolicyGate {
     }
 
     // 3. Verifiable Basis & External Anchor Invariant
-    const vaultChk = await externalVaultStore.get(proposal.sourceCheckpointId);
-    if (!vaultChk) {
+    const basisCheckpoint = await externalVaultStore.get(proposal.sourceCheckpointId);
+    if (!basisCheckpoint) {
       proposal.status = 'POLICY_REJECTED';
       throw new WolverineError(
-        WolverineErrorCode.ANCHOR_VERIFICATION_FAILED,
-        `PolicyGate: Source checkpoint ${proposal.sourceCheckpointId} not found in external vault store`
+        WolverineErrorCode.UNTRUSTED_RECOVERY_BASIS,
+        `PolicyGate: Basis checkpoint ${proposal.sourceCheckpointId} not found in trusted store`
       );
     }
 
-    if (!timingSafeEqualHashes(vaultChk.merkleRoot, proposal.expectedMerkleRoot)) {
+    if (!timingSafeEqualHashes(basisCheckpoint.merkleRoot, proposal.expectedMerkleRoot)) {
       proposal.status = 'POLICY_REJECTED';
       throw new WolverineError(
         WolverineErrorCode.MERKLE_ROOT_MISMATCH,
-        'PolicyGate: Vault checkpoint Merkle root does not match proposal expected Merkle root'
+        'PolicyGate: Basis checkpoint Merkle root does not match proposal expectation'
       );
     }
 
-    // 4. Verify against public blockchain anchor
-    const anchorRecord = await evmAnchorAdapter.getAnchor(proposal.sourceCheckpointId);
-    if (!anchorRecord) {
-      proposal.status = 'POLICY_REJECTED';
-      throw new WolverineError(
-        WolverineErrorCode.ANCHOR_UNAVAILABLE,
-        `PolicyGate: Source checkpoint ${proposal.sourceCheckpointId} has no corresponding public blockchain anchor`
-      );
-    }
-
-    if (!timingSafeEqualHashes(anchorRecord.checkpointDigest, proposal.expectedAnchorDigest)) {
+    // 4. Verifiable External Ethereum Anchor Check
+    const anchor = await evmAnchorAdapter.getAnchor(proposal.sourceCheckpointId);
+    if (!anchor || anchor.status !== 'FINALIZED') {
       proposal.status = 'POLICY_REJECTED';
       throw new WolverineError(
         WolverineErrorCode.ANCHOR_VERIFICATION_FAILED,
-        'PolicyGate: Blockchain anchor digest does not match proposal expected anchor digest'
+        `PolicyGate: Target basis checkpoint ${proposal.sourceCheckpointId} has no finalized EVM anchor`
+      );
+    }
+
+    if (!timingSafeEqualHashes(anchor.checkpointDigest, proposal.expectedAnchorDigest)) {
+      proposal.status = 'POLICY_REJECTED';
+      throw new WolverineError(
+        WolverineErrorCode.ANCHOR_VERIFICATION_FAILED,
+        'PolicyGate: On-chain anchor digest does not match proposal expectation'
+      );
+    }
+
+    // 5. Blast Radius Cap Invariant (Max 1000 records per autonomous proposal)
+    const MAX_AUTONOMOUS_BLAST_RADIUS = 1000;
+    if (proposal.affectedRecords.length > MAX_AUTONOMOUS_BLAST_RADIUS) {
+      proposal.status = 'POLICY_REJECTED';
+      throw new WolverineError(
+        WolverineErrorCode.RECOVERY_PROPOSAL_FAILED,
+        `PolicyGate: Blast radius exceeded (${proposal.affectedRecords.length} > ${MAX_AUTONOMOUS_BLAST_RADIUS})`
       );
     }
 
@@ -97,7 +123,7 @@ export class PolicyGate {
     return {
       allowed: true,
       verdict: 'ALLOW_PROPOSAL',
-      reason: 'Proposal satisfies all cryptographic basis, scope bounding, and anchor invariants.',
+      reason: 'All mathematical and cryptographic policy invariants satisfied',
       evaluatedProposal: proposal,
     };
   }

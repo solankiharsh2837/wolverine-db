@@ -3,6 +3,7 @@ import { ChangeRecordData, MutationOperation } from '../protocol/types.js';
 import { TableRowVersion, ReconstructedDatabaseState } from './types.js';
 import { MerkleTree } from '../crypto/merkle.js';
 import { canonicalizeJson } from '../binary/c14n.js';
+import { compareCanonicalStrings } from '../crypto/canonical.js';
 
 export class StateReplayEngine {
   /**
@@ -95,8 +96,8 @@ export class StateReplayEngine {
       return Buffer.alloc(32, 0);
     }
 
-    // Sort deterministically by table and primary key
-    rowHashes.sort((a, b) => a.pkSortKey.localeCompare(b.pkSortKey));
+    // Sort deterministically by table and primary key (locale-independent)
+    rowHashes.sort((a, b) => compareCanonicalStrings(a.pkSortKey, b.pkSortKey));
 
     const leaves = rowHashes.map((r) => r.hash);
     const tree = new MerkleTree(leaves);

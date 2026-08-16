@@ -1,4 +1,5 @@
 import { WolverineError, WolverineErrorCode } from '../errors/index.js';
+import { compareCanonicalStrings } from '../crypto/canonical.js';
 
 export interface PrimaryKeyField {
   name: string;
@@ -8,7 +9,7 @@ export interface PrimaryKeyField {
 
 /**
  * Encodes a list of primary key fields into a Canonical Primary Key Tuple binary Buffer.
- * Sorts fields by column name ascending.
+ * Sorts fields deterministically by column name UTF-8 byte order ascending.
  */
 export function encodePrimaryKeyTuple(fields: PrimaryKeyField[]): Buffer {
   if (!fields || fields.length === 0) {
@@ -18,8 +19,8 @@ export function encodePrimaryKeyTuple(fields: PrimaryKeyField[]): Buffer {
     );
   }
 
-  // Sort fields lexicographically by column name ascending
-  const sortedFields = [...fields].sort((f1, f2) => f1.name.localeCompare(f2.name));
+  // Sort fields deterministically by UTF-8 byte comparison (locale-independent)
+  const sortedFields = [...fields].sort((f1, f2) => compareCanonicalStrings(f1.name, f2.name));
 
   const buffers: Buffer[] = [];
 
@@ -44,54 +45,73 @@ export function encodePrimaryKeyTuple(fields: PrimaryKeyField[]): Buffer {
 }
 
 /**
- * Decodes a Canonical Primary Key Tuple binary Buffer.
+ * Decodes a Canonical Primary Key Tuple binary Buffer into primary key fields.
+ * Validates ascending sorted order and non-empty name.
  */
 export function decodePrimaryKeyTuple(buf: Buffer): PrimaryKeyField[] {
-  if (buf.length < 2) {
+  if (!buf || buf.length < 2) {
     throw new WolverineError(
       WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
-      'Buffer too short to contain primary key column count'
+      'Buffer is too short to contain primary key tuple header'
     );
   }
 
   let offset = 0;
-  const colCount = buf.readUInt16BE(offset);
+  const count = buf.readUInt16BE(offset);
   offset += 2;
 
-  const fields: PrimaryKeyField[] = [];
-  let prevName = '';
+  if (count === 0) {
+    throw new WolverineError(
+      WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
+      'Primary key tuple field count must be greater than zero'
+    );
+  }
 
-  for (let i = 0; i < colCount; i++) {
+  const fields: PrimaryKeyField[] = [];
+  let prevName: string | null = null;
+
+  for (let i = 0; i < count; i++) {
     if (offset + 2 > buf.length) {
       throw new WolverineError(
         WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
-        'Truncated primary key column name length'
+        'Unexpected EOF reading column name length'
       );
     }
     const nameLen = buf.readUInt16BE(offset);
     offset += 2;
 
+    if (nameLen === 0) {
+      throw new WolverineError(
+        WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
+        'Column name length cannot be zero'
+      );
+    }
+
     if (offset + nameLen > buf.length) {
       throw new WolverineError(
         WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
-        'Truncated primary key column name'
+        'Unexpected EOF reading column name'
       );
     }
-    const colName = buf.toString('utf8', offset, offset + nameLen);
+    const name = buf.toString('utf8', offset, offset + nameLen);
     offset += nameLen;
 
-    if (colName <= prevName && i > 0) {
-      throw new WolverineError(
-        WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
-        `Primary key fields out of order: "${colName}" follows "${prevName}"`
-      );
+    // Enforce ascending lexicographical sort order without duplicate names
+    if (prevName !== null) {
+      const cmp = compareCanonicalStrings(name, prevName);
+      if (cmp <= 0) {
+        throw new WolverineError(
+          WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
+          `Primary key columns not strictly sorted or duplicate column found: "${name}" following "${prevName}"`
+        );
+      }
     }
-    prevName = colName;
+    prevName = name;
 
     if (offset + 1 > buf.length) {
       throw new WolverineError(
         WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
-        'Truncated primary key type tag'
+        'Unexpected EOF reading type tag'
       );
     }
     const typeTag = buf.readUInt8(offset);
@@ -100,7 +120,7 @@ export function decodePrimaryKeyTuple(buf: Buffer): PrimaryKeyField[] {
     if (offset + 4 > buf.length) {
       throw new WolverineError(
         WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
-        'Truncated primary key value length'
+        'Unexpected EOF reading value length'
       );
     }
     const valLen = buf.readUInt32BE(offset);
@@ -109,13 +129,20 @@ export function decodePrimaryKeyTuple(buf: Buffer): PrimaryKeyField[] {
     if (offset + valLen > buf.length) {
       throw new WolverineError(
         WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
-        'Truncated primary key value payload'
+        'Unexpected EOF reading value payload'
       );
     }
     const valueBuffer = Buffer.from(buf.subarray(offset, offset + valLen));
     offset += valLen;
 
-    fields.push({ name: colName, typeTag, valueBuffer });
+    fields.push({ name, typeTag, valueBuffer });
+  }
+
+  if (offset !== buf.length) {
+    throw new WolverineError(
+      WolverineErrorCode.INVALID_PRIMARY_KEY_TUPLE,
+      `Trailing bytes found in primary key tuple: ${buf.length - offset} bytes remaining`
+    );
   }
 
   return fields;

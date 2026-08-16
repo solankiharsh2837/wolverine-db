@@ -1,4 +1,4 @@
-# WolverineDB (v1.2.0)
+# WolverineDB (v1.3.0)
 
 WolverineDB is an open-source cryptographic database integrity, continuous verified state reconstruction, and **Independent Cryptographic Trust Layer for Databases**.
 
@@ -8,7 +8,7 @@ PostgreSQL (as well as MySQL and SQLite) serves as the live system of record. Wo
 
 ---
 
-## Survivability & Independent Trust Architecture (v1.2.0)
+## Survivability & Independent Trust Architecture (v1.3.0)
 
 ```text
                  ┌────────────────────────────────┐
@@ -33,6 +33,7 @@ PostgreSQL (as well as MySQL and SQLite) serves as the live system of record. Wo
         │                        ▼                        │
         │           PERSISTENT TRUST LEDGER &             │
         │            INCREMENTAL MERKLE ROOT              │
+        │           (Serialized Mutex Queue)              │
         └────────────────────────┬────────────────────────┘
                                  ▼
                    IMMUTABLE TRUST RECEIPT CHAIN
@@ -46,12 +47,23 @@ PostgreSQL (as well as MySQL and SQLite) serves as the live system of record. Wo
 
 ---
 
+## Security & Concurrency Hardening (v1.3.0)
+
+- **Linearized Mutex Queue (`WDB-0131`)**: Serialized atomic append queue prevents sequence duplication and ledger forking under concurrent write loads.
+- **Atomic Exclusive Checkpoint Creation (`WDB-0132`)**: POSIX `O_CREAT | O_EXCL` (`wx`) file creation eliminates TOCTOU races in checkpoint storage.
+- **Strict Authorization Scope Resolution (`WDB-0133`)**: Exact canonical scope matching eliminates prefix/substring scope leakage (e.g. `public.users` cannot leak to `public.users_backup`).
+- **Enforced Keypair Lifecycle & Dual Signatures (`WDB-0134`)**: Mathematical keypair derivation checks and pre-commit dual-signature verification prevent unauthorized key rotations.
+- **Locale-Independent Byte Collation (`WDB-0135`)**: Deterministic UTF-8 byte comparison replaces `localeCompare()`, guaranteeing bitwise-identical Merkle checkpoint roots across all operating systems.
+- **Canonical Protocol Tuple Wire Standard (`WDB-0130`)**: Type-tagged, length-prefixed protocol tuple encoder eliminates all delimiter collisions and signature encoding ambiguities.
+
+---
+
 ## Trust Receipt Chain & Standalone Verification
 
 An auditor verifies an unbroken chain of receipts 100% offline with **ZERO network calls**:
 
 ```bash
-wdb receipt verify ./receipt-5037.json
+wdb receipt chain-verify ./receipt-chain.json
 ```
 
 ```text
@@ -114,7 +126,8 @@ npm run demo:v12
 | **v0.9.0** | Distributed Trust Runtime | `WDB-0090` through `WDB-0096` | Frozen |
 | **v1.0.0** | Production Trust Service & Audit | `WDB-0100` through `WDB-0104` | Frozen |
 | **v1.1.0** | Battle-Hardened Byzantine Resilience | `WDB-0110` through `WDB-0116` | Frozen |
-| **v1.2.0** | Trust Network Survivability Layer | `WDB-0120` through `WDB-0126` | Complete |
+| **v1.2.0** | Trust Network Survivability Layer | `WDB-0120` through `WDB-0126` | Frozen |
+| **v1.3.0** | Cryptographic & Concurrency Hardening | `WDB-0130` through `WDB-0135` | Complete |
 
 ---
 
@@ -122,7 +135,7 @@ npm run demo:v12
 
 ```bash
 npm run build   # tsc (0 errors)
-npm test        # vitest (185 / 185 passed across 85 test suites)
+npm test        # vitest (201 / 201 passed across 87 test suites)
 ```
 
 ---

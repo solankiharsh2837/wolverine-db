@@ -11,7 +11,7 @@ const program = new Command();
 program
   .name('wdb')
   .description('WolverineDB CLI - Independent Cryptographic Trust Layer for Databases')
-  .version('1.2.0');
+  .version('1.3.0');
 
 program
   .command('init')

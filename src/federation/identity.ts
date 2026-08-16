@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { NodeIdentity, NodeTrustStatus, NodeCapability } from './types.js';
 import { WolverineError, WolverineErrorCode } from '../errors/index.js';
+import { encodeProtocolTuple } from '../crypto/canonical.js';
 
 export function computeNodeAttestationDigest(
   nodeId: string,
@@ -9,26 +10,12 @@ export function computeNodeAttestationDigest(
   organizationId: string,
   clusterId: string
 ): Buffer {
-  const domain = Buffer.from('WDB:NODE_ID:v1:', 'utf8');
-
-  const nodeIdBuf = Buffer.from(nodeId, 'utf8');
-  const nodeIdLenBuf = Buffer.alloc(2);
-  nodeIdLenBuf.writeUInt16BE(nodeIdBuf.length, 0);
-
-  const timeBuf = Buffer.alloc(8);
-  timeBuf.writeBigInt64BE(creationEpochUs, 0);
-
-  const orgBuf = Buffer.from(organizationId, 'utf8');
-  const clusterBuf = Buffer.from(clusterId, 'utf8');
-
-  const preimage = Buffer.concat([
-    domain,
-    nodeIdLenBuf,
-    nodeIdBuf,
+  const preimage = encodeProtocolTuple('WDB:NODE_ID:v2:', [
+    nodeId,
     publicKey,
-    timeBuf,
-    orgBuf,
-    clusterBuf,
+    BigInt(creationEpochUs),
+    organizationId,
+    clusterId,
   ]);
 
   return crypto.createHash('sha256').update(preimage).digest();
@@ -45,8 +32,15 @@ export class NodeRegistry {
     clusterId: string,
     privateKey?: crypto.KeyObject
   ): NodeIdentity {
+    if (this.nodes.has(nodeId)) {
+      throw new WolverineError(
+        WolverineErrorCode.UNAUTHORIZED_MUTATION,
+        `Node ${nodeId} already registered in local federation registry`
+      );
+    }
+
     const creationEpochUs = BigInt(Date.now()) * 1000n;
-    const digest = computeNodeAttestationDigest(
+    const attestationDigest = computeNodeAttestationDigest(
       nodeId,
       publicKey,
       creationEpochUs,
@@ -54,11 +48,9 @@ export class NodeRegistry {
       clusterId
     );
 
-    let attestationSignature: Buffer;
+    let attestationSignature = Buffer.alloc(64, 0);
     if (privateKey) {
-      attestationSignature = crypto.sign(null, digest, privateKey);
-    } else {
-      attestationSignature = Buffer.alloc(64, 0);
+      attestationSignature = crypto.sign(null, attestationDigest, privateKey);
     }
 
     const identity: NodeIdentity = {
@@ -76,14 +68,17 @@ export class NodeRegistry {
     return identity;
   }
 
-  public getNode(nodeId: string): NodeIdentity | null {
-    return this.nodes.get(nodeId) || null;
+  public getNode(nodeId: string): NodeIdentity | undefined {
+    return this.nodes.get(nodeId);
   }
 
   public setNodeStatus(nodeId: string, status: NodeTrustStatus): void {
     const node = this.nodes.get(nodeId);
     if (!node) {
-      throw new WolverineError(WolverineErrorCode.INVALID_CONFIGURATION, `Node "${nodeId}" not found in registry`);
+      throw new WolverineError(
+        WolverineErrorCode.UNTRUSTED_APPROVER_KEY,
+        `Node ${nodeId} not found in registry`
+      );
     }
     node.status = status;
   }
@@ -93,7 +88,33 @@ export class NodeRegistry {
     return !!node && node.status === 'TRUSTED';
   }
 
-  public getAllNodes(): NodeIdentity[] {
-    return Array.from(this.nodes.values());
+  public verifyNodeIdentity(identity: NodeIdentity): boolean {
+    const expectedDigest = computeNodeAttestationDigest(
+      identity.nodeId,
+      identity.publicKey,
+      identity.creationEpochUs,
+      identity.organizationId,
+      identity.clusterId
+    );
+
+    const ed25519SpkiHeader = Buffer.from('302a300506032b6570032100', 'hex');
+    const spkiBuffer = Buffer.concat([ed25519SpkiHeader, identity.publicKey]);
+
+    try {
+      const publicKeyObject = crypto.createPublicKey({
+        key: spkiBuffer,
+        format: 'der',
+        type: 'spki',
+      });
+
+      return crypto.verify(
+        null,
+        expectedDigest,
+        publicKeyObject,
+        identity.attestationSignature
+      );
+    } catch {
+      return false;
+    }
   }
 }

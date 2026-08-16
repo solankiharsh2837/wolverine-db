@@ -1,6 +1,6 @@
 {
   "name": "wolverine-db",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Independent cryptographic trust layer for databases: Continuous verified state reconstruction, Byzantine quorum consensus, and immutable trust receipts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,7 +12,8 @@
     "specs",
     "docs",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "SECURITY-AUDIT.md"
   ],
   "scripts": {
     "build": "tsc",
@@ -42,7 +43,9 @@
     "trust-receipt",
     "continuous-reconstruction",
     "zero-trust",
-    "audit-trail"
+    "audit-trail",
+    "concurrency-safe",
+    "non-malleable"
   ],
   "author": "solankiharsh2837",
   "license": "MIT",
