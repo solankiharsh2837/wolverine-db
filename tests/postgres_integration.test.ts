@@ -17,7 +17,7 @@ describe('PostgreSQL End-to-End Change Capture & Tamper-Recovery Loop', () => {
 
     const triggerSql = generateTableTriggerSql('public', 'users', ['id']);
     expect(triggerSql).toContain('wolverine_sys_trg_public_users');
-    expect(triggerSql).toContain('AFTER INSERT OR UPDATE OR DELETE ON public.users');
+    expect(triggerSql).toContain('AFTER INSERT OR UPDATE OR DELETE ON "public"."users"');
   });
 
   it('executes full End-to-End Tamper-Detect-Recover Verification Cycle', () => {

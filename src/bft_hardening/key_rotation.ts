@@ -3,20 +3,56 @@ import { CustomerKeyRotationRecord } from './types.js';
 import { PersistentTrustLedger } from '../trust_service/persistent_ledger.js';
 import { WolverineError, WolverineErrorCode } from '../errors/index.js';
 
+export function computeKeyRotationPayload(
+  tenantId: string,
+  databaseId: string,
+  rotationSeq: bigint,
+  oldPubkey: Buffer,
+  newPubkey: Buffer
+): Buffer {
+  const domain = Buffer.from('WDB:KEY_ROTATION:v2:', 'utf8');
+
+  const tenantBytes = Buffer.from(tenantId, 'utf8');
+  const tenantLen = Buffer.alloc(4);
+  tenantLen.writeUInt32BE(tenantBytes.length, 0);
+
+  const dbBytes = Buffer.from(databaseId, 'utf8');
+  const dbLen = Buffer.alloc(4);
+  dbLen.writeUInt32BE(dbBytes.length, 0);
+
+  const seqBuf = Buffer.alloc(8);
+  seqBuf.writeBigUInt64BE(BigInt(rotationSeq));
+
+  return Buffer.concat([
+    domain,
+    tenantLen,
+    tenantBytes,
+    dbLen,
+    dbBytes,
+    seqBuf,
+    oldPubkey,
+    newPubkey,
+  ]);
+}
+
 export class CustomerKeyRotationManager {
-  private activeKeys = new Map<string, Buffer>(); // tenantId -> currentPubkey
+  private activeKeys = new Map<string, Buffer>(); // tenantId -> active public key
   private ledger: PersistentTrustLedger;
 
   constructor(ledger: PersistentTrustLedger) {
     this.ledger = ledger;
   }
 
-  public registerInitialKey(tenantId: string, pubkey: Buffer): void {
-    this.activeKeys.set(tenantId, pubkey);
+  public registerGenesisKey(tenantId: string, publicKey: Buffer): void {
+    this.activeKeys.set(tenantId, publicKey);
   }
 
-  public getActiveKey(tenantId: string): Buffer | null {
-    return this.activeKeys.get(tenantId) || null;
+  public registerInitialKey(tenantId: string, publicKey: Buffer): void {
+    this.registerGenesisKey(tenantId, publicKey);
+  }
+
+  public getActiveKey(tenantId: string): Buffer | undefined {
+    return this.activeKeys.get(tenantId);
   }
 
   public async executeKeyRotation(
@@ -37,12 +73,13 @@ export class CustomerKeyRotationManager {
     }
 
     const timestampUs = BigInt(Date.now()) * 1000n;
-    const rotationPayload = Buffer.concat([
-      Buffer.from('WDB:KEY_ROTATION:v1:', 'utf8'),
-      Buffer.from(tenantId, 'utf8'),
+    const rotationPayload = computeKeyRotationPayload(
+      tenantId,
+      databaseId,
+      rotationSeq,
       oldPubkey,
-      newPubkey,
-    ]);
+      newPubkey
+    );
 
     const oldSig = crypto.sign(null, rotationPayload, oldPrivateKey);
     const newSig = crypto.sign(null, rotationPayload, newPrivateKey);

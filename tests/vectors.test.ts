@@ -1,33 +1,32 @@
 import { describe, it, expect } from 'vitest';
-import crypto from 'node:crypto';
 import { canonicalizeJson } from '../src/binary/c14n.js';
 import { encodePrimaryKeyTuple } from '../src/binary/record_id.js';
 import { encodeBinaryRecord } from '../src/binary/encoder.js';
-import { computeChangeHash, sha256 } from '../src/crypto/hash.js';
+import { computeChangeHash } from '../src/crypto/hash.js';
 import { computeMerkleLeafHash, computeMerkleNodeHash, EMPTY_TREE_ROOT } from '../src/crypto/merkle.js';
 import { encodeApprovalPayload } from '../src/crypto/approval.js';
 
 describe('Normative Test Vectors (specs/TEST-VECTORS.md)', () => {
-  it('1. Domain-Separated Constants & Empty Merkle Root', () => {
+  it('1. Domain-Separated Constants & Empty Merkle Root (v2)', () => {
     expect(EMPTY_TREE_ROOT.toString('hex')).toBe(
-      '8e4f2728690f5b33a7e61d15881334c705770f18450ecdc1c3b77f02f3df6024'
+      '35092d6ecaa0e9c5f9054cc332f5afd64b3e7af6c83e3ebcb10b12790a0a8be9'
     );
   });
 
-  it('2. Merkle Leaf Hash Formula', () => {
+  it('2. Merkle Leaf Hash Formula (v2)', () => {
     const leafPayload = Buffer.from('test_leaf_payload', 'ascii');
     const leafHash = computeMerkleLeafHash(leafPayload);
     expect(leafHash.toString('hex')).toBe(
-      '1e6ebc3db5f2c97294b84401ed2722cc84ddd3ae5b946ede528edda2ffc9674b'
+      '8054087b71e862555e22debc5fa48b4a5bf9d510b420144a6ee79b0d78f17fca'
     );
   });
 
-  it('2. Merkle Internal Node Hash Formula', () => {
+  it('2. Merkle Internal Node Hash Formula (v2)', () => {
     const leftHash = Buffer.alloc(32, 1);
     const rightHash = Buffer.alloc(32, 2);
     const nodeHash = computeMerkleNodeHash(leftHash, rightHash);
     expect(nodeHash.toString('hex')).toBe(
-      'bca27582de55580e19701dd8a76955d3162a7f4c8f927a7f0d4910d02d8660bc'
+      '6914ad2d409a5b83aba8f93f88755ae4798d1f7a79d65e31b35e07d947131727'
     );
   });
 
@@ -94,7 +93,7 @@ describe('Normative Test Vectors (specs/TEST-VECTORS.md)', () => {
     );
   });
 
-  it('6. Ed25519 Policy Approval Payload Format', () => {
+  it('6. Ed25519 Policy Approval Payload Format (v2)', () => {
     const payload = encodeApprovalPayload({
       incidentId: Buffer.alloc(16, 1),
       protectedScope: 'public.users',
@@ -110,7 +109,7 @@ describe('Normative Test Vectors (specs/TEST-VECTORS.md)', () => {
     });
 
     expect(payload.toString('hex')).toBe(
-      '010101010101010101010101010101017075626c69632e757365727302020202020202020202020202020202030303030303030303030303030303030303030303030303030303030303030361646d696e406578616d706c652e636f6dc225c99bf94417cc2f4b50d5e7f1b0e4f7ad1e185316244fd6ca0ae13aa65db7040404040404040404040404040404040006651728988000'
+      '5744423a415050524f56414c5f454e56454c4f50453a76323a010101010101010101010101010101010000000c7075626c69632e75736572730202020202020202020202020202020203030303030303030303030303030303030303030303030303030303030303030000001161646d696e406578616d706c652e636f6dc225c99bf94417cc2f4b50d5e7f1b0e4f7ad1e185316244fd6ca0ae13aa65db7040404040404040404040404040404040006651728988000'
     );
   });
 });

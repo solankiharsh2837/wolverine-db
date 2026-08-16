@@ -15,9 +15,22 @@ export function computeFederatedRecoveryDigest(
   Buffer.from(proposalId.replace(/-/g, ''), 'hex').copy(propIdBuf, 0);
 
   const incIdBuf = Buffer.from(incidentId, 'utf8');
-  const scopeBuf = Buffer.from(protectedScope, 'utf8');
+  const incIdLenBuf = Buffer.alloc(4);
+  incIdLenBuf.writeUInt32BE(incIdBuf.length, 0);
 
-  const preimage = Buffer.concat([domain, propIdBuf, incIdBuf, scopeBuf, proposedChangesHash]);
+  const scopeBuf = Buffer.from(protectedScope, 'utf8');
+  const scopeLenBuf = Buffer.alloc(4);
+  scopeLenBuf.writeUInt32BE(scopeBuf.length, 0);
+
+  const preimage = Buffer.concat([
+    domain,
+    propIdBuf,
+    incIdLenBuf,
+    incIdBuf,
+    scopeLenBuf,
+    scopeBuf,
+    proposedChangesHash,
+  ]);
   return crypto.createHash('sha256').update(preimage).digest();
 }
 

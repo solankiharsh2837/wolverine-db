@@ -44,6 +44,8 @@ export function computeDistributedIncidentId(
 ): string {
   const domain = Buffer.from('WDB:INCIDENT_ID:v1:', 'utf8');
   const planeBuf = Buffer.from(originPlane, 'utf8');
+  const planeLenBuf = Buffer.alloc(4);
+  planeLenBuf.writeUInt32BE(planeBuf.length, 0);
 
   const rootEventBuf = Buffer.alloc(16);
   Buffer.from(rootEventId.replace(/-/g, ''), 'hex').copy(rootEventBuf, 0);
@@ -52,8 +54,18 @@ export function computeDistributedIncidentId(
   timeBuf.writeBigInt64BE(timestampUs, 0);
 
   const scopeBuf = Buffer.from(scope, 'utf8');
+  const scopeLenBuf = Buffer.alloc(4);
+  scopeLenBuf.writeUInt32BE(scopeBuf.length, 0);
 
-  const preimage = Buffer.concat([domain, planeBuf, rootEventBuf, timeBuf, scopeBuf]);
+  const preimage = Buffer.concat([
+    domain,
+    planeLenBuf,
+    planeBuf,
+    rootEventBuf,
+    timeBuf,
+    scopeLenBuf,
+    scopeBuf,
+  ]);
   const digest = crypto.createHash('sha256').update(preimage).digest();
   const hexSuffix = digest.subarray(0, 8).toString('hex');
 

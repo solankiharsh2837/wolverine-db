@@ -10,6 +10,7 @@ import { verifyCustomerCommitment } from './commitment.js';
 import { canonicalizeJson } from '../binary/c14n.js';
 import { timingSafeEqualHashes } from '../crypto/hash.js';
 import { computeQuorumCertificateDigest } from './consensus.js';
+import { computeAttestationDigest } from './validator.js';
 
 export function computePortableProofDigest(
   proof: Omit<PortableTrustProof, 'proofDigestHex'>
@@ -173,7 +174,6 @@ export class OfflineTrustProofVerifier {
     }
 
     let validAttestationCount = 0;
-    const domain = Buffer.from('WDB:ATTEST:v1:', 'utf8');
 
     for (const att of proof.validatorAttestations) {
       const pubKey = valKeyMap.get(att.validatorId);
@@ -183,18 +183,12 @@ export class OfflineTrustProofVerifier {
         continue;
       }
 
-      const timeBuf = Buffer.alloc(8);
-      timeBuf.writeBigUInt64BE(BigInt(att.timestampUs));
-      const attDigest = crypto
-        .createHash('sha256')
-        .update(Buffer.concat([
-          domain,
-          Buffer.from(proof.commitment.commitmentId, 'utf8'),
-          Buffer.from(att.validatorId, 'utf8'),
-          Buffer.from(att.observedCommitmentDigestHex, 'hex'),
-          timeBuf,
-        ]))
-        .digest();
+      const attDigest = computeAttestationDigest(
+        proof.commitment.commitmentId,
+        att.validatorId,
+        Buffer.from(att.observedCommitmentDigestHex, 'hex'),
+        BigInt(att.timestampUs)
+      );
 
       try {
         const pubKeyObject = crypto.createPublicKey({

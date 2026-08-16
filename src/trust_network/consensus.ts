@@ -5,6 +5,7 @@ import {
   QuorumCertificate,
 } from './types.js';
 import { WolverineTrustLedger } from './ledger.js';
+import { computeAttestationDigest } from './validator.js';
 import { canonicalizeJson } from '../binary/c14n.js';
 import { timingSafeEqualHashes } from '../crypto/hash.js';
 import { WolverineError, WolverineErrorCode } from '../errors/index.js';
@@ -77,19 +78,12 @@ export class TrustConsensusEngine {
       const pubKey = this.validatorPublicKeys.get(att.validatorId);
       if (!pubKey) continue;
 
-      const domain = Buffer.from('WDB:ATTEST:v1:', 'utf8');
-      const timeBuf = Buffer.alloc(8);
-      timeBuf.writeBigUInt64BE(att.timestampUs);
-      const attDigest = crypto
-        .createHash('sha256')
-        .update(Buffer.concat([
-          domain,
-          Buffer.from(att.commitmentId, 'utf8'),
-          Buffer.from(att.validatorId, 'utf8'),
-          att.observedCommitmentDigest,
-          timeBuf,
-        ]))
-        .digest();
+      const attDigest = computeAttestationDigest(
+        att.commitmentId,
+        att.validatorId,
+        att.observedCommitmentDigest,
+        att.timestampUs
+      );
 
       try {
         const pubKeyObject = crypto.createPublicKey({

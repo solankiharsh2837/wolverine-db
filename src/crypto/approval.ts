@@ -17,9 +17,11 @@ export interface SignedApprovalEnvelope extends ApprovalEnvelopeParams {
 }
 
 /**
- * Encodes the canonical binary payload for Ed25519 approval signing.
+ * Encodes the canonical binary payload for Ed25519 approval signing with unambiguous length prefixing.
  */
 export function encodeApprovalPayload(params: ApprovalEnvelopeParams): Buffer {
+  const domain = Buffer.from('WDB:APPROVAL_ENVELOPE:v2:', 'utf8');
+
   if (params.incidentId.length !== 16) {
     throw new WolverineError(
       WolverineErrorCode.INVALID_APPROVAL_SIGNATURE,
@@ -52,16 +54,24 @@ export function encodeApprovalPayload(params: ApprovalEnvelopeParams): Buffer {
   }
 
   const scopeBuf = Buffer.from(params.protectedScope, 'utf8');
+  const scopeLenBuf = Buffer.alloc(4);
+  scopeLenBuf.writeUInt32BE(scopeBuf.length, 0);
+
   const reqIdBuf = Buffer.from(params.requesterId, 'utf8');
+  const reqIdLenBuf = Buffer.alloc(4);
+  reqIdLenBuf.writeUInt32BE(reqIdBuf.length, 0);
 
   const expiresBuf = Buffer.alloc(8);
   expiresBuf.writeBigInt64BE(params.expiresAtUs, 0);
 
   return Buffer.concat([
+    domain,
     params.incidentId,
+    scopeLenBuf,
     scopeBuf,
     params.targetVersionId,
     params.proposedChangesHash,
+    reqIdLenBuf,
     reqIdBuf,
     params.approverPubkey,
     params.nonce,
@@ -77,9 +87,11 @@ export function verifyApprovalEnvelope(
   trustedApproverKeysHex: string[],
   currentTimestampUs: bigint
 ): void {
-  // 1. Separation of duties check
-  const approverHex = envelope.approverPubkey.toString('hex');
-  if (approverHex === envelope.requesterId || envelope.requesterId.includes(approverHex)) {
+  // 1. Strict canonical separation of duties check (exact equality)
+  const approverHex = envelope.approverPubkey.toString('hex').toLowerCase();
+  const requesterNormalized = envelope.requesterId.toLowerCase();
+
+  if (approverHex === requesterNormalized) {
     throw new WolverineError(
       WolverineErrorCode.REQUESTER_IS_APPROVER,
       `Separation of duties violation: approver ${approverHex} cannot be requester ${envelope.requesterId}`
@@ -88,7 +100,7 @@ export function verifyApprovalEnvelope(
 
   // 2. Trusted approver key check
   const isTrustedKey = trustedApproverKeysHex.some(
-    (key) => key.toLowerCase() === approverHex.toLowerCase()
+    (key) => key.toLowerCase() === approverHex
   );
   if (!isTrustedKey) {
     throw new WolverineError(

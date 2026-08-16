@@ -5,6 +5,30 @@ import { WolverineError, WolverineErrorCode } from '../errors/index.js';
 import { computeCheckpointDigest } from './anchor.js';
 import { timingSafeEqualHashes } from '../crypto/hash.js';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SAFE_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
+
+export function validateCheckpointId(checkpointId: string, baseDir: string): string {
+  if (!checkpointId || (!UUID_REGEX.test(checkpointId) && !SAFE_ID_REGEX.test(checkpointId))) {
+    throw new WolverineError(
+      WolverineErrorCode.ANCHOR_VERIFICATION_FAILED,
+      `Invalid checkpointId format: "${checkpointId}". Must be valid UUID or alphanumeric identifier.`
+    );
+  }
+
+  const resolvedBase = path.resolve(baseDir);
+  const targetPath = path.resolve(resolvedBase, `${checkpointId}.wdbchk`);
+
+  if (!targetPath.startsWith(resolvedBase + path.sep) && targetPath !== resolvedBase) {
+    throw new WolverineError(
+      WolverineErrorCode.ANCHOR_VERIFICATION_FAILED,
+      `Path traversal detected for checkpointId "${checkpointId}"`
+    );
+  }
+
+  return targetPath;
+}
+
 function parseCheckpointJson(jsonStr: string): AnchoredCheckpoint {
   return JSON.parse(jsonStr, (k, v) => {
     if (['merkleRoot', 'changeChainHead', 'digest'].includes(k)) {
@@ -45,7 +69,7 @@ export class LocalCheckpointStore implements CheckpointStore {
   }
 
   private getFilePath(checkpointId: string): string {
-    return path.join(this.baseDir, `${checkpointId}.wdbchk`);
+    return validateCheckpointId(checkpointId, this.baseDir);
   }
 
   public async put(checkpoint: AnchoredCheckpoint): Promise<void> {

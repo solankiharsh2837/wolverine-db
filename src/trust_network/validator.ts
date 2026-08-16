@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { TrustCommitment, ValidatorAttestation } from './types.js';
 import { verifyCustomerCommitment } from './commitment.js';
-import { timingSafeEqualHashes } from '../crypto/hash.js';
 import { WolverineError, WolverineErrorCode } from '../errors/index.js';
 
 export function computeAttestationDigest(
@@ -10,19 +9,32 @@ export function computeAttestationDigest(
   observedCommitmentDigest: Buffer,
   timestampUs: bigint
 ): Buffer {
-  const domain = Buffer.from('WDB:ATTEST:v1:', 'utf8');
+  const domain = Buffer.from('WDB:ATTEST:v2:', 'utf8');
+
+  const cmtBytes = Buffer.from(commitmentId, 'utf8');
+  const cmtLen = Buffer.alloc(4);
+  cmtLen.writeUInt32BE(cmtBytes.length, 0);
+
+  const valBytes = Buffer.from(validatorId, 'utf8');
+  const valLen = Buffer.alloc(4);
+  valLen.writeUInt32BE(valBytes.length, 0);
+
   const timeBuf = Buffer.alloc(8);
   timeBuf.writeBigUInt64BE(timestampUs);
 
   return crypto
     .createHash('sha256')
-    .update(Buffer.concat([
-      domain,
-      Buffer.from(commitmentId, 'utf8'),
-      Buffer.from(validatorId, 'utf8'),
-      observedCommitmentDigest,
-      timeBuf,
-    ]))
+    .update(
+      Buffer.concat([
+        domain,
+        cmtLen,
+        cmtBytes,
+        valLen,
+        valBytes,
+        observedCommitmentDigest,
+        timeBuf,
+      ])
+    )
     .digest();
 }
 
@@ -59,27 +71,27 @@ export class TrustValidator {
 
   public attestCommitment(
     commitment: TrustCommitment,
-    expectedCustomerPubkey?: Buffer
+    expectedCustomerPubkey: Buffer
   ): ValidatorAttestation {
-    // 1. Verify Customer Signature & Commitment Digest
+    // 1. Verify Customer Signature & Tenant Identity
     const isCustomerValid = verifyCustomerCommitment(commitment, expectedCustomerPubkey);
     if (!isCustomerValid) {
       throw new WolverineError(
         WolverineErrorCode.UNAUTHORIZED_MUTATION,
-        `Validator ${this.validatorId} rejected commitment: Invalid customer signature or tenant binding`
+        `Validator ${this.validatorId} rejected: Invalid customer signature or tenant binding`
       );
     }
 
-    // 2. Check Sequence Monotonicity & Idempotency
-    const key = `${commitment.tenantId}:${commitment.databaseId}`;
-    const prior = this.tenantHistory.get(key);
+    // 2. Enforce Monotonic Sequence Order
+    const tenantKey = `${commitment.tenantId}:${commitment.databaseId}`;
+    const prior = this.tenantHistory.get(tenantKey);
 
     if (prior) {
-      // Idempotent retry check: same seq, same ID, same digest
+      // Idempotent retry: if this validator already attested this exact same commitment, return cached attestation
       if (
         commitment.commitSeq === prior.lastSeq &&
         commitment.commitmentId === prior.lastCommitmentId &&
-        timingSafeEqualHashes(commitment.checkpointDigest, prior.lastDigest)
+        Buffer.compare(commitment.commitmentDigest, prior.lastDigest) === 0
       ) {
         return prior.attestation;
       }
@@ -87,7 +99,14 @@ export class TrustValidator {
       if (commitment.commitSeq <= prior.lastSeq) {
         throw new WolverineError(
           WolverineErrorCode.HISTORY_MUTATION_DETECTED,
-          `Validator ${this.validatorId} rejected commitment: Non-monotonic commitSeq ${commitment.commitSeq} <= ${prior.lastSeq}`
+          `Validator ${this.validatorId} detected sequence rollback or duplication: seq ${commitment.commitSeq} <= ${prior.lastSeq}`
+        );
+      }
+
+      if (Buffer.compare(commitment.previousTrustCommitment, prior.lastDigest) !== 0) {
+        throw new WolverineError(
+          WolverineErrorCode.HISTORY_MUTATION_DETECTED,
+          `Validator ${this.validatorId} detected broken chain: previous digest mismatch`
         );
       }
     }
@@ -95,7 +114,7 @@ export class TrustValidator {
     this.attestationSeq += 1n;
     const timestampUs = BigInt(Date.now()) * 1000n;
 
-    // 3. Compute Attestation Digest & Sign
+    // 3. Compute Digest and Sign Attestation
     const attestationDigest = computeAttestationDigest(
       commitment.commitmentId,
       this.validatorId,
@@ -115,13 +134,43 @@ export class TrustValidator {
       signature,
     };
 
-    this.tenantHistory.set(key, {
+    // Update local history
+    this.tenantHistory.set(tenantKey, {
       lastSeq: commitment.commitSeq,
       lastCommitmentId: commitment.commitmentId,
-      lastDigest: commitment.checkpointDigest,
+      lastDigest: commitment.commitmentDigest,
       attestation,
     });
 
     return attestation;
+  }
+
+  public verifyAttestation(
+    attestation: ValidatorAttestation,
+    expectedValidatorPubkey: Buffer
+  ): boolean {
+    const digest = computeAttestationDigest(
+      attestation.commitmentId,
+      attestation.validatorId,
+      attestation.observedCommitmentDigest,
+      attestation.timestampUs
+    );
+
+    const spkiBuffer = Buffer.concat([
+      Buffer.from('302a300506032b6570032100', 'hex'),
+      expectedValidatorPubkey,
+    ]);
+
+    try {
+      const pubKeyObject = crypto.createPublicKey({
+        key: spkiBuffer,
+        format: 'der',
+        type: 'spki',
+      });
+
+      return crypto.verify(null, digest, pubKeyObject, attestation.signature);
+    } catch {
+      return false;
+    }
   }
 }

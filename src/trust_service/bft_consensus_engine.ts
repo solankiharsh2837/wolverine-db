@@ -5,6 +5,7 @@ import {
   QuorumCertificate,
 } from '../trust_network/types.js';
 import { computeQuorumCertificateDigest } from '../trust_network/consensus.js';
+import { computeAttestationDigest } from '../trust_network/validator.js';
 import { PersistentTrustLedger } from './persistent_ledger.js';
 import { SlashingEvidenceRecord } from './types.js';
 import { WolverineError, WolverineErrorCode } from '../errors/index.js';
@@ -39,7 +40,6 @@ export class BftConsensusEngine {
   ): Promise<QuorumCertificate> {
     const validAttestations: ValidatorAttestation[] = [];
     const seenValidators = new Set<string>();
-    const domain = Buffer.from('WDB:ATTEST:v1:', 'utf8');
 
     for (const att of attestations) {
       // 1. Must be a registered validator
@@ -69,18 +69,12 @@ export class BftConsensusEngine {
       }
 
       // 4. Verify Cryptographic Signature
-      const timeBuf = Buffer.alloc(8);
-      timeBuf.writeBigUInt64BE(att.timestampUs);
-      const attDigest = crypto
-        .createHash('sha256')
-        .update(Buffer.concat([
-          domain,
-          Buffer.from(commitment.commitmentId, 'utf8'),
-          Buffer.from(att.validatorId, 'utf8'),
-          att.observedCommitmentDigest,
-          timeBuf,
-        ]))
-        .digest();
+      const attDigest = computeAttestationDigest(
+        commitment.commitmentId,
+        att.validatorId,
+        att.observedCommitmentDigest,
+        att.timestampUs
+      );
 
       try {
         const pubKeyObject = crypto.createPublicKey({
