@@ -28,6 +28,8 @@ export class WolverineTrustLedger {
 
   // Track finalized commitment sequences per (tenantId, databaseId) -> { commitSeq, commitmentDigest }
   private finalizedCommitments = new Map<string, { commitSeq: bigint; commitmentDigest: Buffer }>();
+  private commitmentIndex = new Map<string, TrustLedgerRecord>();
+  private certificateDigestIndex = new Map<string, TrustLedgerRecord>();
 
   public appendRecord(
     recordType: TrustLedgerRecordType,
@@ -76,6 +78,13 @@ export class WolverineTrustLedger {
     this.headDigest = Buffer.from(recordDigest);
     this.currentSeq = nextSeq;
 
+    if (payload['commitmentId']) {
+      this.commitmentIndex.set(String(payload['commitmentId']), record);
+    }
+    if (payload['certificateDigestHex']) {
+      this.certificateDigestIndex.set(String(payload['certificateDigestHex']).toLowerCase(), record);
+    }
+
     if (recordType === 'FINALIZATION' && tenantId && databaseId && payload['commitSeq'] && payload['commitmentDigestHex']) {
       const commitSeq = BigInt(payload['commitSeq'] as string);
       const commitmentDigest = Buffer.from(payload['commitmentDigestHex'] as string, 'hex');
@@ -83,6 +92,15 @@ export class WolverineTrustLedger {
     }
 
     return record;
+  }
+
+  public getRecordByCommitmentId(commitmentId: string): TrustLedgerRecord | undefined {
+    return this.commitmentIndex.get(commitmentId);
+  }
+
+  public getRecordByCertificateDigest(certificateDigest: Buffer | string): TrustLedgerRecord | undefined {
+    const hex = Buffer.isBuffer(certificateDigest) ? certificateDigest.toString('hex') : certificateDigest;
+    return this.certificateDigestIndex.get(hex.toLowerCase());
   }
 
   public getRecords(): readonly TrustLedgerRecord[] {

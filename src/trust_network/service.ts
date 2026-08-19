@@ -126,12 +126,19 @@ export class WolverineTrustNetworkService {
       throw rejectionErrors[0]!;
     }
 
-    // 2. Execute Consensus
-    const certificate = this.consensusEngine.processAttestations(commitment, attestations);
+    // 2. Execute Consensus & Obtain Bound Ledger Record
+    const { certificate, ledgerRecord } = this.consensusEngine.processAttestationsWithRecord(commitment, attestations);
 
-    // 3. Obtain Ledger Finalization Record
-    const records = this.ledger.getRecords();
-    const ledgerRecord = records[records.length - 1]!;
+    // Explicit cryptographic binding validation
+    if (
+      ledgerRecord.payload['commitmentId'] !== commitment.commitmentId ||
+      ledgerRecord.payload['certificateDigestHex'] !== certificate.certificateDigest.toString('hex')
+    ) {
+      throw new WolverineError(
+        WolverineErrorCode.HISTORY_MUTATION_DETECTED,
+        `Ledger record binding mismatch for commitment ${commitment.commitmentId}`
+      );
+    }
 
     // 4. Generate Portable Proof
     const valKeyMap = new Map<string, Buffer>();

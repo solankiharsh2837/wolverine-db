@@ -3,6 +3,7 @@ import {
   TrustCommitment,
   ValidatorAttestation,
   QuorumCertificate,
+  TrustLedgerRecord,
 } from './types.js';
 import { WolverineTrustLedger } from './ledger.js';
 import { computeAttestationDigest } from './validator.js';
@@ -57,10 +58,10 @@ export class TrustConsensusEngine {
     this.validatorPublicKeys.set(validatorId, publicKey);
   }
 
-  public processAttestations(
+  public processAttestationsWithRecord(
     commitment: TrustCommitment,
     attestations: ValidatorAttestation[]
-  ): QuorumCertificate {
+  ): { certificate: QuorumCertificate; ledgerRecord: TrustLedgerRecord } {
     // 1. Filter and verify valid attestations
     const validAttestations: ValidatorAttestation[] = [];
     const seenValidators = new Set<string>();
@@ -136,7 +137,7 @@ export class TrustConsensusEngine {
     };
 
     // 3. Append FINALIZATION to Trust Ledger
-    this.ledger.appendRecord(
+    const ledgerRecord = this.ledger.appendRecord(
       'FINALIZATION',
       {
         commitmentId: commitment.commitmentId,
@@ -154,6 +155,13 @@ export class TrustConsensusEngine {
       commitment.databaseId
     );
 
-    return certificate;
+    return { certificate, ledgerRecord };
+  }
+
+  public processAttestations(
+    commitment: TrustCommitment,
+    attestations: ValidatorAttestation[]
+  ): QuorumCertificate {
+    return this.processAttestationsWithRecord(commitment, attestations).certificate;
   }
 }
