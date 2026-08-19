@@ -168,6 +168,29 @@ export class BesuClient {
   }
 
   /**
+   * Fetches latest on-chain commitment for a tenant and database.
+   */
+  public async getLatestCommitment(tenantId: string, databaseId: string): Promise<any> {
+    if (this.customRpcHandler) {
+      return this.customRpcHandler('getLatestCommitment', [tenantId, databaseId]);
+    }
+
+    if (!this.publicClient) {
+      throw new WolverineError(
+        WolverineErrorCode.INVALID_CONFIGURATION,
+        'BesuClient publicClient not configured'
+      );
+    }
+
+    return this.publicClient.readContract({
+      address: this.config.contractAddress,
+      abi: WOLVERINE_TRUST_REGISTRY_ABI,
+      functionName: 'getLatestCommitment',
+      args: [tenantId, databaseId],
+    });
+  }
+
+  /**
    * Queries latest block number from Besu.
    */
   public async getBlockNumber(): Promise<bigint> {

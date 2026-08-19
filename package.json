@@ -35,6 +35,7 @@
     "besu:status": "tsc && node ./dist/blockchain/besu/status.js",
     "besu:deploy": "tsc && node ./dist/blockchain/besu/deploy.js",
     "besu:test": "vitest run tests/blockchain/",
+    "test:acceptance": "tsc && node ./dist/acceptance/live_acceptance.js",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
