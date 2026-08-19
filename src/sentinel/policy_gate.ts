@@ -73,13 +73,23 @@ export class PolicyGate {
       );
     }
 
-    // 3. Verifiable Basis & External Anchor Invariant
+    // 3. Verifiable Basis & External Store Immutability Invariant
     const basisCheckpoint = await externalVaultStore.get(proposal.sourceCheckpointId);
     if (!basisCheckpoint) {
       proposal.status = 'POLICY_REJECTED';
       throw new WolverineError(
         WolverineErrorCode.UNTRUSTED_RECOVERY_BASIS,
         `PolicyGate: Basis checkpoint ${proposal.sourceCheckpointId} not found in trusted store`
+      );
+    }
+
+    // Explicitly verify cryptographic integrity and WORM immutability in the store
+    const isStoreImmutablyValid = await externalVaultStore.verify(proposal.sourceCheckpointId);
+    if (!isStoreImmutablyValid) {
+      proposal.status = 'POLICY_REJECTED';
+      throw new WolverineError(
+        WolverineErrorCode.UNTRUSTED_RECOVERY_BASIS,
+        `PolicyGate: Basis checkpoint ${proposal.sourceCheckpointId} failed cryptographic immutability verification in external store`
       );
     }
 
@@ -119,12 +129,45 @@ export class PolicyGate {
       );
     }
 
+    // 6. Atomic Pre-Approval TOCTOU Re-verification
+    // Re-verify basis checkpoint and EVM anchor immediately prior to granting approval
+    const preApprovalCheckpoint = await externalVaultStore.get(proposal.sourceCheckpointId);
+    if (
+      !preApprovalCheckpoint ||
+      !timingSafeEqualHashes(preApprovalCheckpoint.merkleRoot, proposal.expectedMerkleRoot) ||
+      !timingSafeEqualHashes(preApprovalCheckpoint.digest, basisCheckpoint.digest)
+    ) {
+      proposal.status = 'POLICY_REJECTED';
+      throw new WolverineError(
+        WolverineErrorCode.UNTRUSTED_RECOVERY_BASIS,
+        `PolicyGate: TOCTOU violation - Basis checkpoint ${proposal.sourceCheckpointId} modified or invalidated prior to final approval`
+      );
+    }
+
+    const preApprovalAnchor = await evmAnchorAdapter.getAnchor(proposal.sourceCheckpointId);
+    if (
+      !preApprovalAnchor ||
+      preApprovalAnchor.status !== 'FINALIZED' ||
+      !timingSafeEqualHashes(preApprovalAnchor.checkpointDigest, proposal.expectedAnchorDigest)
+    ) {
+      proposal.status = 'POLICY_REJECTED';
+      throw new WolverineError(
+        WolverineErrorCode.ANCHOR_VERIFICATION_FAILED,
+        `PolicyGate: TOCTOU violation - EVM anchor for ${proposal.sourceCheckpointId} modified or unfinalized prior to final approval`
+      );
+    }
+
     proposal.status = 'POLICY_APPROVED';
+    const evaluatedProposal: AdvisoryRecoveryProposal = {
+      ...proposal,
+      status: 'POLICY_APPROVED',
+    };
+
     return {
       allowed: true,
       verdict: 'ALLOW_PROPOSAL',
       reason: 'All mathematical and cryptographic policy invariants satisfied',
-      evaluatedProposal: proposal,
+      evaluatedProposal,
     };
   }
 }

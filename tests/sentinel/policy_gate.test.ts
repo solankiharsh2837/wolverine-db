@@ -132,4 +132,156 @@ describe('Deterministic Policy Gate Engine (WDB-0034 Hardening)', () => {
       PolicyGate.evaluateProposal(rogueProposal, vaultStore, evmAdapter, registeredScopes)
     ).rejects.toThrow('PolicyGate: Affected record table "public.system_config" breaches proposal scope');
   });
+
+  it('property: REJECT_PROPOSAL if external store immutability verification fails', async () => {
+    const vaultStore = new WORMCheckpointStore();
+    const evmAdapter = new EvmAnchorAdapter({
+      chainId: '1',
+      contractAddress: '0x1234567890123456789012345678901234567890',
+      requiredConfirmations: 1,
+    });
+
+    await CheckpointAnchorEngine.anchorCheckpoint(vaultStore, {
+      checkpointId,
+      scope,
+      commitSeq,
+      previousCheckpointId: null,
+      merkleRoot,
+      changeChainHead: Buffer.alloc(32, 0),
+      createdAtUs,
+      protocolVersion: 3,
+    });
+
+    const anchorDigest = computeCheckpointDigest({
+      checkpointId,
+      scope,
+      commitSeq,
+      previousCheckpointId: null,
+      merkleRoot,
+      changeChainHead: Buffer.alloc(32, 0),
+      createdAtUs,
+      protocolVersion: 3,
+    });
+    await evmAdapter.anchorCheckpoint(checkpointId, anchorDigest, commitSeq);
+
+    // Mock store verify to return false (failed immutability)
+    vaultStore.verify = async () => false;
+
+    const affectedRecords = [
+      {
+        tableName: 'public.users',
+        primaryKeyHex: '010203',
+        fieldName: 'role',
+        compromisedValue: 'SUPERUSER',
+        restoredValue: 'USER',
+      },
+    ];
+    const proposedChangesHash = crypto
+      .createHash('sha256')
+      .update(Buffer.from(canonicalizeJson(affectedRecords), 'utf8'))
+      .digest();
+
+    const proposal: AdvisoryRecoveryProposal = {
+      proposalId: '00000000-0000-0000-0000-000000000184',
+      incidentId: '00000000-0000-0000-0000-000000000491',
+      protectedScope: scope,
+      targetBasisVersionId: 'ver-1842',
+      sourceCheckpointId: checkpointId,
+      expectedMerkleRoot: merkleRoot,
+      expectedAnchorDigest: anchorDigest,
+      affectedRecords,
+      proposedChangesHash,
+      confidenceScore: 95,
+      riskAssessment: 'LOW',
+      rationale: 'Valid restoration',
+      decisionAuthority: 'NONE',
+      status: 'PENDING_POLICY_EVALUATION',
+    };
+
+    await expect(
+      PolicyGate.evaluateProposal(proposal, vaultStore, evmAdapter, registeredScopes)
+    ).rejects.toThrow(/failed cryptographic immutability verification/);
+    expect(proposal.status).toBe('POLICY_REJECTED');
+  });
+
+  it('property: REJECT_PROPOSAL if TOCTOU occurs between initial read and final approval', async () => {
+    const vaultStore = new WORMCheckpointStore();
+    const evmAdapter = new EvmAnchorAdapter({
+      chainId: '1',
+      contractAddress: '0x1234567890123456789012345678901234567890',
+      requiredConfirmations: 1,
+    });
+
+    await CheckpointAnchorEngine.anchorCheckpoint(vaultStore, {
+      checkpointId,
+      scope,
+      commitSeq,
+      previousCheckpointId: null,
+      merkleRoot,
+      changeChainHead: Buffer.alloc(32, 0),
+      createdAtUs,
+      protocolVersion: 3,
+    });
+
+    const anchorDigest = computeCheckpointDigest({
+      checkpointId,
+      scope,
+      commitSeq,
+      previousCheckpointId: null,
+      merkleRoot,
+      changeChainHead: Buffer.alloc(32, 0),
+      createdAtUs,
+      protocolVersion: 3,
+    });
+    await evmAdapter.anchorCheckpoint(checkpointId, anchorDigest, commitSeq);
+
+    const affectedRecords = [
+      {
+        tableName: 'public.users',
+        primaryKeyHex: '010203',
+        fieldName: 'role',
+        compromisedValue: 'SUPERUSER',
+        restoredValue: 'USER',
+      },
+    ];
+    const proposedChangesHash = crypto
+      .createHash('sha256')
+      .update(Buffer.from(canonicalizeJson(affectedRecords), 'utf8'))
+      .digest();
+
+    const proposal: AdvisoryRecoveryProposal = {
+      proposalId: '00000000-0000-0000-0000-000000000184',
+      incidentId: '00000000-0000-0000-0000-000000000491',
+      protectedScope: scope,
+      targetBasisVersionId: 'ver-1842',
+      sourceCheckpointId: checkpointId,
+      expectedMerkleRoot: merkleRoot,
+      expectedAnchorDigest: anchorDigest,
+      affectedRecords,
+      proposedChangesHash,
+      confidenceScore: 95,
+      riskAssessment: 'LOW',
+      rationale: 'Valid restoration',
+      decisionAuthority: 'NONE',
+      status: 'PENDING_POLICY_EVALUATION',
+    };
+
+    // Simulate TOCTOU: On the pre-approval re-verification call (3rd get call), the basis checkpoint has mutated
+    let callCount = 0;
+    const originalGet = vaultStore.get.bind(vaultStore);
+    vaultStore.get = async (id: string) => {
+      const chk = await originalGet(id);
+      callCount++;
+      if (callCount >= 3 && chk) {
+        // Mutated basis on pre-approval read
+        return { ...chk, merkleRoot: Buffer.alloc(32, 0xee) };
+      }
+      return chk;
+    };
+
+    await expect(
+      PolicyGate.evaluateProposal(proposal, vaultStore, evmAdapter, registeredScopes)
+    ).rejects.toThrow(/TOCTOU violation/);
+    expect(proposal.status).toBe('POLICY_REJECTED');
+  });
 });
