@@ -4,6 +4,7 @@ import { CREATE_WOLVERINE_SYS_SCHEMA_SQL } from './schema.js';
 import { generateTableTriggerSql } from './triggers.js';
 import { ChangeRecordData, MutationOperation } from '../protocol/types.js';
 import { validateChangeRecordData } from '../protocol/validators.js';
+import { PostgresNonceStore } from './nonce_store.js';
 
 export interface DatabaseConfig {
   connectionString: string;
@@ -180,6 +181,23 @@ export class PostgresAdapter {
     } finally {
       client.release();
     }
+  }
+
+  public getNonceStore(): PostgresNonceStore {
+    return new PostgresNonceStore(this.pool);
+  }
+
+  public async isNonceConsumed(nonce: Buffer | string): Promise<boolean> {
+    return this.getNonceStore().isConsumed(nonce);
+  }
+
+  public async recordConsumedNonce(
+    nonce: Buffer | string,
+    incidentId: string,
+    approverPubkey: Buffer,
+    client?: pg.PoolClient
+  ): Promise<void> {
+    return this.getNonceStore().recordConsumed(nonce, incidentId, approverPubkey, client);
   }
 
   public async close(): Promise<void> {

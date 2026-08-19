@@ -18,6 +18,7 @@ import { PolicyGate } from '../sentinel/policy_gate.js';
 import { encodeApprovalPayload, SignedApprovalEnvelope } from '../crypto/approval.js';
 import { RecoveryProposal } from '../engine/recovery.js';
 import { RecoveryProvenanceEngine } from '../engine/recovery_provenance.js';
+import { IApprovalNonceStore, InMemoryNonceStore } from '../engine/nonce_store.js';
 import { canonicalizeJson } from '../binary/c14n.js';
 
 export interface ReconstructionWorkflowOptions {
@@ -32,6 +33,7 @@ export interface ReconstructionWorkflowOptions {
   compromisedActors?: string[];
   registeredScopes: string[];
   approverKeys?: Array<{ publicKey: Buffer; privateKey: crypto.KeyObject }>;
+  nonceStore?: IApprovalNonceStore;
 }
 
 export class StateReconstructionCoordinator {
@@ -220,7 +222,7 @@ export class StateReconstructionCoordinator {
     };
 
     const trustedApprovers = options.approverKeys.map((k) => k.publicKey);
-    const consumedNonces = new Set<string>();
+    const nonceStore = options.nonceStore ?? new InMemoryNonceStore();
     const newCommitSeq = manifest.endingCommitSeq + 1n;
 
     // 3. Atomic Recovery Execution
@@ -228,7 +230,7 @@ export class StateReconstructionCoordinator {
       recoveryProposal,
       signedEnvelope,
       trustedApprovers,
-      consumedNonces,
+      nonceStore,
       options.externalVaultStore,
       newCommitSeq,
       manifest.reconstructedMerkleRoot,

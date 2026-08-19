@@ -1,4 +1,5 @@
 import { RecoveryProposal, RecoveryExecutionResult, validateAndPrepareRecovery } from './recovery.js';
+import { IApprovalNonceStore } from './nonce_store.js';
 import { SignedApprovalEnvelope } from '../crypto/approval.js';
 import { CheckpointStore, AnchoredCheckpoint } from '../checkpoint/types.js';
 import { CheckpointAnchorEngine } from '../checkpoint/anchor.js';
@@ -22,7 +23,7 @@ export class RecoveryProvenanceEngine {
     proposal: RecoveryProposal,
     approvalEnvelope: SignedApprovalEnvelope,
     trustedApprovers: Buffer[],
-    consumedNonces: Set<string>,
+    consumedNonces: Set<string> | IApprovalNonceStore,
     externalStore: CheckpointStore,
     currentSeq: bigint,
     preIncidentMerkleRoot: Buffer,
@@ -32,7 +33,7 @@ export class RecoveryProvenanceEngine {
     const trustedApproversHex = trustedApprovers.map((k) => k.toString('hex'));
 
     // 1. Execute recovery under WDB-0006 approval rules
-    const result = validateAndPrepareRecovery(
+    const result = await validateAndPrepareRecovery(
       proposal,
       approvalEnvelope,
       trustedApproversHex,
