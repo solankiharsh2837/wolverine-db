@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "name": "wolverine-db",
+  "version": "1.3.0",
+  "projectType": "systems-software/database-cryptographic-trust-layer",
+  "description": "Independent cryptographic trust layer for databases: Continuous verified state reconstruction, Byzantine quorum consensus, and immutable trust receipts",
+  "repository": "https://github.com/solankiharsh2837/wolverine-db",
+  "entryPoints": {
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "cli": "dist/cli/index.js",
+    "binary": "wdb"
+  },
+  "subsystems": [
+    {
+      "name": "wal",
+      "path": "src/wal",
+      "description": "Write-Ahead Log decoders, receivers, and normalization engine"
+    },
+    {
+      "name": "crypto",
+      "path": "src/crypto",
+      "description": "Ed25519 asymmetric signatures, Merkle trees, and domain-separated SHA-256 hashing"
+    },
+    {
+      "name": "binary",
+      "path": "src/binary",
+      "description": "Strict RFC-compliant canonical JSON (c14n) serialization"
+    },
+    {
+      "name": "postgres",
+      "path": "src/postgres",
+      "description": "PostgreSQL replication client, schema migrations, and PostgresNonceStore"
+    },
+    {
+      "name": "trust_network",
+      "path": "src/trust_network",
+      "description": "BFT consensus engine, TrustValidator, WolverineTrustLedger, and PortableTrustProof"
+    },
+    {
+      "name": "sentinel",
+      "path": "src/sentinel",
+      "description": "Behavioral anomaly detection, advisor, and deterministic PolicyGate"
+    },
+    {
+      "name": "reconstruction",
+      "path": "src/reconstruction",
+      "description": "State frontier tracking, recovery manifests, and verified mutation replay"
+    },
+    {
+      "name": "runtime",
+      "path": "src/runtime",
+      "description": "TrustGatewayServer, distributed clusters, and network transport interfaces"
+    }
+  ],
+  "dependencies": {
+    "commander": "^12.0.0",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  },
+  "testing": {
+    "runner": "vitest",
+    "testFiles": 90,
+    "totalTests": 219,
+    "command": "npm test"
+  },
+  "securityAudits": {
+    "issue_1": { "title": "Durable approval nonce replay protection", "status": "resolved", "pr": "#5" },
+    "issue_2": { "title": "Gateway ledger record binding", "status": "resolved", "pr": "#6" },
+    "issue_3": { "title": "Gateway ingress signer authentication", "status": "resolved", "pr": "#7" },
+    "issue_4": { "title": "Policy gate TOCTOU immutability defense", "status": "resolved", "pr": "#8" }
+  },
+  "documentation": {
+    "index": "docs/README.md",
+    "overview": "docs/PROJECT_OVERVIEW.md",
+    "architecture": "docs/ARCHITECTURE.md",
+    "directoryMap": "docs/DIRECTORY_MAP.md",
+    "crypto": "docs/CRYPTO_SPECIFICATION.md",
+    "consensus": "docs/BYZANTINE_CONSENSUS.md",
+    "postgres": "docs/POSTGRES_ADAPTER.md",
+    "sentinel": "docs/SENTINEL_POLICY_GATE.md",
+    "proofs": "docs/PORTABLE_TRUST_PROOFS.md",
+    "testing": "docs/TESTING_AND_VERIFICATION.md",
+    "knownIssues": "docs/KNOWN_ISSUES.md",
+    "aiContext": "docs/AI_CONTEXT.md"
+  }
+}

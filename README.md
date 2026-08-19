@@ -135,7 +135,7 @@ npm run demo:v12
 
 ```bash
 npm run build   # tsc (0 errors)
-npm test        # vitest (201 / 201 passed across 87 test suites)
+npm test        # vitest (219 / 219 passed across 90 test suites)
 ```
 
 ---
