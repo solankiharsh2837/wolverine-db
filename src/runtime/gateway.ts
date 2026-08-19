@@ -159,12 +159,22 @@ export class TrustGatewayServer {
     const attestResults = await Promise.all(attestPromises);
     const validAttestations = attestResults.filter((a): a is NonNullable<typeof a> => a !== null);
 
-    // 2. Execute Quorum Consensus
-    const certificate = this.consensusEngine.processAttestations(commitment, validAttestations);
+    // 2. Execute Quorum Consensus & Obtain Bound Ledger Record
+    const { certificate, ledgerRecord } = this.consensusEngine.processAttestationsWithRecord(
+      commitment,
+      validAttestations
+    );
 
-    // 3. Obtain Master Ledger Record
-    const records = this.ledger.getRecords();
-    const ledgerRecord = records[records.length - 1]!;
+    // Explicit cryptographic binding validation
+    if (
+      ledgerRecord.payload['commitmentId'] !== commitment.commitmentId ||
+      ledgerRecord.payload['certificateDigestHex'] !== certificate.certificateDigest.toString('hex')
+    ) {
+      throw new WolverineError(
+        WolverineErrorCode.HISTORY_MUTATION_DETECTED,
+        `Ledger record binding mismatch for commitment ${commitment.commitmentId}`
+      );
+    }
 
     // 4. Broadcast to Ledger Replicas
     const replicatePromises = this.config.replicaEndpoints.map(async (r) => {
