@@ -174,9 +174,11 @@ export function verifyMerkleProof(
     if (step.side === 0) {
       // Sibling is on left
       currentHash = computeMerkleNodeHash(step.siblingHash, currentHash);
-    } else {
+    } else if (step.side === 1) {
       // Sibling is on right
       currentHash = computeMerkleNodeHash(currentHash, step.siblingHash);
+    } else {
+      return false;
     }
   }
 

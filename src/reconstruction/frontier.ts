@@ -141,12 +141,12 @@ export class VerifiedStateFrontierEngine {
           break;
         }
 
-        const inWindow = baseline.maintenanceWindows.some(
-          (w) =>
-            w.daysOfWeek.includes(item.dayOfWeek) &&
-            item.utcHour >= w.startUtcHour &&
-            item.utcHour <= w.endUtcHour
-        );
+        const inWindow = baseline.maintenanceWindows.some((w) => {
+          if (!w.daysOfWeek.includes(item.dayOfWeek)) return false;
+          return w.startUtcHour <= w.endUtcHour
+            ? item.utcHour >= w.startUtcHour && item.utcHour <= w.endUtcHour
+            : item.utcHour >= w.startUtcHour || item.utcHour <= w.endUtcHour;
+        });
         if (!inWindow && baseline.maintenanceWindows.length > 0) {
           firstInvalidCommitSeq = item.commitSeq;
           compromiseReason = `OUT_OF_WINDOW_MUTATION: UTC Hour ${item.utcHour} is outside maintenance window`;

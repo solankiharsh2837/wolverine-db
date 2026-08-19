@@ -73,7 +73,8 @@ export class BftConsensusEngine {
         commitment.commitmentId,
         att.validatorId,
         att.observedCommitmentDigest,
-        att.timestampUs
+        att.timestampUs,
+        att.validatorSetId
       );
 
       try {
@@ -104,11 +105,12 @@ export class BftConsensusEngine {
     }
 
     // 6. Assemble Quorum Certificate
+    const valSetId = validAttestations[0]?.validatorSetId || commitment.validatorSetId || 'valset-genesis';
     const finalizedAtUs = BigInt(Date.now()) * 1000n;
     const certificateDigest = computeQuorumCertificateDigest(
       commitment.commitmentId,
       commitment.commitmentDigest.toString('hex'),
-      commitment.validatorSetId,
+      valSetId,
       commitment.epoch,
       validAttestations.length,
       this.totalValidators,
@@ -118,7 +120,7 @@ export class BftConsensusEngine {
     const certificate: QuorumCertificate = {
       commitmentId: commitment.commitmentId,
       commitmentDigest: commitment.commitmentDigest,
-      validatorSetId: commitment.validatorSetId,
+      validatorSetId: valSetId,
       epoch: commitment.epoch,
       quorumCount: validAttestations.length,
       totalValidators: this.totalValidators,
@@ -142,7 +144,7 @@ export class BftConsensusEngine {
         finalizedAtUs: finalizedAtUs.toString(),
       },
       commitment.epoch,
-      commitment.validatorSetId,
+      valSetId,
       commitment.tenantId,
       commitment.databaseId
     );

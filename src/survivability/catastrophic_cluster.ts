@@ -142,22 +142,27 @@ export class CatastrophicSurvivabilityCluster {
     this.isGatewayOnline = true;
     this.customerSla.setWolverineOnline(true, 'HEALTHY');
 
-    // Replace destroyed validators with healthy replacements
+    // Replace destroyed validators with healthy replacements & update surviving validators
     for (let i = 1; i <= 5; i++) {
       const vId = `val-0${i}`;
       const entry = this.validators.get(vId);
-      if (entry && !entry.isOnline) {
-        const newValidator = new ByzantineTrustValidator({
-          validatorId: vId,
-          validatorSetId: newValidatorSetId,
-          epoch: newEpoch,
-          port: 9500 + i,
-          host: '127.0.0.1',
-        });
-        entry.validator = newValidator;
-        entry.isOnline = true;
-        this.validatorKeys.set(vId, newValidator.publicKey);
-        this.consensusEngine.registerValidatorKey(vId, newValidator.publicKey);
+      if (entry) {
+        if (!entry.isOnline) {
+          const newValidator = new ByzantineTrustValidator({
+            validatorId: vId,
+            validatorSetId: newValidatorSetId,
+            epoch: newEpoch,
+            port: 9500 + i,
+            host: '127.0.0.1',
+          });
+          entry.validator = newValidator;
+          entry.isOnline = true;
+          this.validatorKeys.set(vId, newValidator.publicKey);
+          this.consensusEngine.registerValidatorKey(vId, newValidator.publicKey);
+        } else {
+          (entry.validator as any).config.epoch = newEpoch;
+          (entry.validator as any).config.validatorSetId = newValidatorSetId;
+        }
       }
     }
   }

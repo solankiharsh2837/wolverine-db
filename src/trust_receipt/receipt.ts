@@ -68,7 +68,13 @@ export class ImmutableTrustReceiptGenerator {
 }
 
 export class ImmutableTrustReceiptVerifier {
-  public static verifyReceiptOffline(receipt: ImmutableTrustReceipt): {
+  public static verifyReceiptOffline(
+    receipt: ImmutableTrustReceipt,
+    options?: {
+      expectedMerkleRoot?: Buffer | string;
+      trustedValidatorKeys?: Map<string, Buffer>;
+    }
+  ): {
     isValid: boolean;
     status: string;
     details?: Record<string, unknown> | undefined;
@@ -82,8 +88,36 @@ export class ImmutableTrustReceiptVerifier {
       };
     }
 
-    // 2. Verify Embedded Portable Proof
-    const proofResult: OfflineProofVerificationResult = OfflineTrustProofVerifier.verifyPortableProof(receipt.portableProof);
+    // 2. Validate Merkle State Root Hex Integrity
+    if (
+      !receipt.trustTime?.merkleStateRootHex ||
+      !/^[0-9a-fA-F]{64}$/.test(receipt.trustTime.merkleStateRootHex)
+    ) {
+      return {
+        isValid: false,
+        status: 'INVALID_MERKLE_STATE_ROOT: Root must be a valid 32-byte (64-character) hex digest',
+      };
+    }
+
+    if (options?.expectedMerkleRoot) {
+      const expectedBuf =
+        typeof options.expectedMerkleRoot === 'string'
+          ? Buffer.from(options.expectedMerkleRoot, 'hex')
+          : options.expectedMerkleRoot;
+      const actualBuf = Buffer.from(receipt.trustTime.merkleStateRootHex, 'hex');
+      if (!timingSafeEqualHashes(actualBuf, expectedBuf)) {
+        return {
+          isValid: false,
+          status: 'MERKLE_STATE_ROOT_MISMATCH: merkleStateRoot does not match expected root',
+        };
+      }
+    }
+
+    // 3. Verify Embedded Portable Proof
+    const proofResult: OfflineProofVerificationResult = OfflineTrustProofVerifier.verifyPortableProof(
+      receipt.portableProof,
+      options?.trustedValidatorKeys
+    );
     if (!proofResult.isValid) {
       return {
         isValid: false,
@@ -91,7 +125,7 @@ export class ImmutableTrustReceiptVerifier {
       };
     }
 
-    // 3. Cross-Timeline Consistency Checks
+    // 4. Cross-Timeline Consistency Checks
     if (receipt.databaseTime.commitSeq !== receipt.portableProof.commitment.commitSeq) {
       return {
         isValid: false,

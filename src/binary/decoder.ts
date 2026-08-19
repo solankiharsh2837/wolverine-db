@@ -83,6 +83,13 @@ export function decodeBinaryRecord(buf: Buffer): DecodedBinaryRecord {
     fields.push({ tag, typeTag, payload });
   }
 
+  if (offset !== buf.length) {
+    throw new WolverineError(
+      WolverineErrorCode.MALFORMED_FIELD_PAYLOAD,
+      `Trailing bytes found in binary record: expected length ${offset}, got ${buf.length}`
+    );
+  }
+
   return {
     recordType,
     flags,

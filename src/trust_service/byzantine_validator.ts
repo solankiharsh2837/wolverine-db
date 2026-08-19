@@ -101,7 +101,8 @@ export class ByzantineTrustValidator {
       commitment.commitmentId,
       this.config.validatorId,
       commitment.commitmentDigest,
-      timestampUs
+      timestampUs,
+      this.config.validatorSetId
     );
 
     const signature = crypto.sign(null, attestationDigest, this.privateKey);

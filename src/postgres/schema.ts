@@ -76,4 +76,16 @@ CREATE TABLE IF NOT EXISTS wolverine_sys.recovery_proposals (
   requester_id TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'PENDING'
 );
+
+-- Legacy pending mutations buffer table for fallback compatibility
+CREATE TABLE IF NOT EXISTS wolverine_sys.pending_mutations (
+  mutation_id BIGSERIAL PRIMARY KEY,
+  scope TEXT NOT NULL,
+  table_name TEXT,
+  record_id TEXT,
+  op_type TEXT NOT NULL,
+  old_data JSONB,
+  new_data JSONB,
+  created_at_us BIGINT NOT NULL
+);
 `;

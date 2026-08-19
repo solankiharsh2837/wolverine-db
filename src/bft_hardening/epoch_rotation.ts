@@ -58,8 +58,14 @@ export class EpochRotationManager {
     // Grace period: allow current epoch or currentEpoch - 1
     if (commitmentEpoch < this.currentEpoch - 1) {
       throw new WolverineError(
-        WolverineErrorCode.ANCHOR_UNAVAILABLE,
+        WolverineErrorCode.UNAUTHORIZED_MUTATION,
         `STALE_EPOCH: Commitment epoch ${commitmentEpoch} is expired (current network epoch: ${this.currentEpoch})`
+      );
+    }
+    if (commitmentEpoch > this.currentEpoch) {
+      throw new WolverineError(
+        WolverineErrorCode.UNAUTHORIZED_MUTATION,
+        `FUTURE_EPOCH: Commitment epoch ${commitmentEpoch} exceeds active network epoch (current: ${this.currentEpoch})`
       );
     }
     return true;

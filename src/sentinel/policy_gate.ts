@@ -23,7 +23,11 @@ export function matchesProtectedScope(tableName: string, protectedScope: string)
 
   if (protectedScope.endsWith('.*')) {
     const schema = protectedScope.slice(0, -2);
-    return tableName.startsWith(schema + '.') && tableName.lastIndexOf('.') === schema.length;
+    return tableName.startsWith(schema + '.');
+  }
+
+  if (tableName.startsWith(protectedScope + '.')) {
+    return true;
   }
 
   return false;

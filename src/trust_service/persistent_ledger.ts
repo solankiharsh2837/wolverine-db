@@ -3,7 +3,7 @@ import {
   TrustLedgerRecordType,
 } from '../trust_network/types.js';
 import { computeLedgerRecordDigest } from '../trust_network/ledger.js';
-import { MerkleTree } from '../crypto/merkle.js';
+import { MerkleTree, EMPTY_TREE_ROOT } from '../crypto/merkle.js';
 import { IPersistentStorage, LedgerStateRootSnapshot } from './types.js';
 
 export class MemoryJournalStorage implements IPersistentStorage {
@@ -144,7 +144,7 @@ export class PersistentTrustLedger {
    */
   public computeMerkleStateRoot(): Buffer {
     if (this.recordDigests.length === 0) {
-      return Buffer.alloc(32, 0);
+      return EMPTY_TREE_ROOT;
     }
     const tree = new MerkleTree(this.recordDigests);
     return tree.root;

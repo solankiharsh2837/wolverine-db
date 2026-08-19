@@ -39,23 +39,46 @@ function verifyEd25519Signature(publicKey: Buffer, payload: Buffer, signature: B
 }
 
 export class CustomerKeyRotationManager {
-  private activeKeys = new Map<string, Buffer>(); // tenantId -> active public key
   private ledger: PersistentTrustLedger;
+  private activeKeys = new Map<string, Buffer>();
+  private lastRotationSeqs = new Map<string, bigint>();
 
   constructor(ledger: PersistentTrustLedger) {
     this.ledger = ledger;
   }
 
-  public registerGenesisKey(tenantId: string, publicKey: Buffer): void {
-    this.activeKeys.set(tenantId, publicKey);
+  public registerGenesisKey(tenantId: string, pubkey: Buffer): void {
+    this.registerInitialKey(tenantId, pubkey);
   }
 
-  public registerInitialKey(tenantId: string, publicKey: Buffer): void {
-    this.registerGenesisKey(tenantId, publicKey);
+  public registerInitialKey(tenantId: string, pubkey: Buffer): void {
+    this.activeKeys.set(tenantId, pubkey);
   }
 
   public getActiveKey(tenantId: string): Buffer | undefined {
     return this.activeKeys.get(tenantId);
+  }
+
+  public verifyRotationProof(
+    record: CustomerKeyRotationRecord,
+    oldPub: Buffer,
+    newPub: Buffer
+  ): boolean {
+    const oldSig = Buffer.from(record.oldKeySignatureHex, 'hex');
+    const newSig = Buffer.from(record.newKeySignatureHex, 'hex');
+
+    const payload = computeKeyRotationPayload(
+      record.tenantId,
+      record.databaseId,
+      record.rotationSeq,
+      oldPub,
+      newPub
+    );
+
+    const isOldValid = verifyEd25519Signature(oldPub, payload, oldSig);
+    const isNewValid = verifyEd25519Signature(newPub, payload, newSig);
+
+    return isOldValid && isNewValid;
   }
 
   /**
@@ -90,6 +113,15 @@ export class CustomerKeyRotationManager {
     newPubkey: Buffer,
     rotationSeq: bigint
   ): Promise<CustomerKeyRotationRecord> {
+    // 0. Enforce Monotonic Rotation Sequence
+    const prevSeq = this.lastRotationSeqs.get(tenantId) ?? 0n;
+    if (rotationSeq <= prevSeq) {
+      throw new WolverineError(
+        WolverineErrorCode.UNAUTHORIZED_MUTATION,
+        `Key rotation failed: Non-monotonic rotationSeq ${rotationSeq} <= ${prevSeq} for tenant ${tenantId}`
+      );
+    }
+
     // 1. Verify Active Key Registration
     const currentActive = this.activeKeys.get(tenantId);
     if (!currentActive || Buffer.compare(currentActive, oldPubkey) !== 0) {
@@ -172,6 +204,12 @@ export class CustomerKeyRotationManager {
       timestampUs,
     };
 
+    // Retrieve active epoch and validator set ID from ledger
+    const ledgerRecords = this.ledger.getRecords();
+    const lastRecord = ledgerRecords[ledgerRecords.length - 1];
+    const activeEpoch = lastRecord ? lastRecord.epoch : 1;
+    const activeValsetId = lastRecord ? lastRecord.validatorSetId : 'valset-prod-v1';
+
     // 6. Commit key rotation record to persistent ledger
     await this.ledger.appendRecord(
       'REVOCATION',
@@ -185,14 +223,15 @@ export class CustomerKeyRotationManager {
         oldKeySignatureHex: record.oldKeySignatureHex,
         newKeySignatureHex: record.newKeySignatureHex,
       },
-      1,
-      'valset-prod-v1',
+      activeEpoch,
+      activeValsetId,
       tenantId,
       databaseId
     );
 
-    // 7. Update active key in memory
+    // 7. Update active key and monotonic sequence in memory
     this.activeKeys.set(tenantId, newPubkey);
+    this.lastRotationSeqs.set(tenantId, rotationSeq);
 
     return record;
   }

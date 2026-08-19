@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { ChangeRecordData, MutationOperation } from '../protocol/types.js';
 import { TableRowVersion, ReconstructedDatabaseState } from './types.js';
-import { MerkleTree } from '../crypto/merkle.js';
+import { MerkleTree, EMPTY_TREE_ROOT } from '../crypto/merkle.js';
 import { canonicalizeJson } from '../binary/c14n.js';
 import { compareCanonicalStrings } from '../crypto/canonical.js';
 
@@ -11,7 +11,8 @@ export class StateReplayEngine {
    */
   public static replayChanges(
     initialState: ReconstructedDatabaseState,
-    changes: ChangeRecordData[]
+    changes: Array<ChangeRecordData & { commitSeq?: bigint }>,
+    startingSeq: bigint = 1n
   ): ReconstructedDatabaseState {
     const state: ReconstructedDatabaseState = new Map();
 
@@ -24,6 +25,7 @@ export class StateReplayEngine {
       state.set(table, tableRows);
     }
 
+    let currentSeq = startingSeq;
     for (const change of changes) {
       const tableName = change.tableId;
       if (!state.has(tableName)) {
@@ -31,6 +33,7 @@ export class StateReplayEngine {
       }
       const tableRows = state.get(tableName)!;
       const pkHex = change.recordId.toString('hex');
+      const seq = change.commitSeq ?? currentSeq++;
 
       if (change.operation === MutationOperation.INSERT) {
         const newValues = (change.fieldSet.new as Record<string, unknown>) || {};
@@ -39,7 +42,7 @@ export class StateReplayEngine {
           primaryKeyTuple: change.recordId,
           values: newValues,
           versionId: change.versionId,
-          commitSeq: change.timestampUs,
+          commitSeq: seq,
           deleted: false,
         });
       } else if (change.operation === MutationOperation.UPDATE) {
@@ -53,7 +56,7 @@ export class StateReplayEngine {
           primaryKeyTuple: change.recordId,
           values: mergedValues,
           versionId: change.versionId,
-          commitSeq: change.timestampUs,
+          commitSeq: seq,
           deleted: false,
         });
       } else if (change.operation === MutationOperation.DELETE) {
@@ -93,7 +96,7 @@ export class StateReplayEngine {
     }
 
     if (rowHashes.length === 0) {
-      return Buffer.alloc(32, 0);
+      return EMPTY_TREE_ROOT;
     }
 
     // Sort deterministically by table and primary key (locale-independent)

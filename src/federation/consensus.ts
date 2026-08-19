@@ -135,12 +135,12 @@ export class FederatedConsensusEngine {
     if (validMatchingNodes.length >= policy.requiredQuorum) {
       verdict = 'FEDERATION_CONSENSUS_VALID';
       summary = `Federated Quorum Satisfied: ${validMatchingNodes.length}/${policy.totalNodes} nodes agree (required: ${policy.requiredQuorum})`;
-    } else if (validMatchingNodes.length > 0 && validMatchingNodes.length < policy.requiredQuorum) {
-      verdict = 'FEDERATION_CONSENSUS_DEGRADED';
-      summary = `Degraded Quorum: ${validMatchingNodes.length}/${policy.totalNodes} nodes agree (required: ${policy.requiredQuorum})`;
     } else if (divergentNodes.length > 0) {
       verdict = 'FEDERATION_CONSENSUS_DIVERGENCE';
       summary = `Federation Divergence: ${divergentNodes.length} nodes report conflicting state roots`;
+    } else if (validMatchingNodes.length > 0 && validMatchingNodes.length < policy.requiredQuorum) {
+      verdict = 'FEDERATION_CONSENSUS_DEGRADED';
+      summary = `Degraded Quorum: ${validMatchingNodes.length}/${policy.totalNodes} nodes agree (required: ${policy.requiredQuorum})`;
     } else {
       verdict = 'FEDERATION_CONSENSUS_INDETERMINATE';
       summary = 'Insufficient active attestations to determine consensus';

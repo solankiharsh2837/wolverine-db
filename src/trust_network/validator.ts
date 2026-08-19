@@ -7,7 +7,8 @@ export function computeAttestationDigest(
   commitmentId: string,
   validatorId: string,
   observedCommitmentDigest: Buffer,
-  timestampUs: bigint
+  timestampUs: bigint,
+  validatorSetId: string = 'valset-genesis'
 ): Buffer {
   const domain = Buffer.from('WDB:ATTEST:v2:', 'utf8');
 
@@ -18,6 +19,10 @@ export function computeAttestationDigest(
   const valBytes = Buffer.from(validatorId, 'utf8');
   const valLen = Buffer.alloc(4);
   valLen.writeUInt32BE(valBytes.length, 0);
+
+  const valSetBytes = Buffer.from(validatorSetId, 'utf8');
+  const valSetLen = Buffer.alloc(4);
+  valSetLen.writeUInt32BE(valSetBytes.length, 0);
 
   const timeBuf = Buffer.alloc(8);
   timeBuf.writeBigUInt64BE(timestampUs);
@@ -31,6 +36,8 @@ export function computeAttestationDigest(
         cmtBytes,
         valLen,
         valBytes,
+        valSetLen,
+        valSetBytes,
         observedCommitmentDigest,
         timeBuf,
       ])
@@ -119,7 +126,8 @@ export class TrustValidator {
       commitment.commitmentId,
       this.validatorId,
       commitment.commitmentDigest,
-      timestampUs
+      timestampUs,
+      this.validatorSetId
     );
 
     const signature = crypto.sign(null, attestationDigest, this.privateKey);
@@ -153,7 +161,8 @@ export class TrustValidator {
       attestation.commitmentId,
       attestation.validatorId,
       attestation.observedCommitmentDigest,
-      attestation.timestampUs
+      attestation.timestampUs,
+      attestation.validatorSetId
     );
 
     const spkiBuffer = Buffer.concat([

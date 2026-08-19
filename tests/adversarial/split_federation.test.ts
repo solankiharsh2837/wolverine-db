@@ -40,7 +40,7 @@ describe('Adversarial: Federated Split & Partition Consensus (WDB-0053)', () => 
     const result = consensusEngine.evaluateConsensus(honestDigest, attestations, policy4of5);
 
     // Fails closed (DEGRADED / DIVERGENCE rather than false VALID)
-    expect(result.verdict).toBe('FEDERATION_CONSENSUS_DEGRADED');
+    expect(result.verdict).toBe('FEDERATION_CONSENSUS_DIVERGENCE');
     expect(result.validMatchingNodes).toHaveLength(3);
     expect(result.divergentNodes).toHaveLength(2);
 

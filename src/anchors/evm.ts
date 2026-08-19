@@ -38,7 +38,11 @@ export class EvmAnchorAdapter {
 
   private updateConfirmations(): void {
     for (const record of this.onChainRegistry.values()) {
-      if (record.blockNumber && record.status !== AnchorStatus.FAILED) {
+      if (
+        record.blockNumber &&
+        record.status !== AnchorStatus.FAILED &&
+        record.status !== AnchorStatus.ORPHANED_REORG
+      ) {
         const confirmations = Number(this.currentBlockNumber - record.blockNumber + 1n);
         record.confirmationCount = Math.max(0, confirmations);
         if (record.confirmationCount >= record.requiredConfirmations) {

@@ -33,7 +33,12 @@ export function validateAndNormalizeDecimal(val: string): string {
     }
   }
 
-  return val;
+  let normalized = val;
+  if (normalized.includes('.')) {
+    normalized = normalized.replace(/(\.[0-9]*[1-9])0+$/, '$1').replace(/\.0+$/, '');
+  }
+
+  return normalized;
 }
 
 export function decimalToBuffer(val: string): Buffer {

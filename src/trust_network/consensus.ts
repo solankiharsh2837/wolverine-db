@@ -83,7 +83,8 @@ export class TrustConsensusEngine {
         att.commitmentId,
         att.validatorId,
         att.observedCommitmentDigest,
-        att.timestampUs
+        att.timestampUs,
+        att.validatorSetId
       );
 
       try {
@@ -112,11 +113,12 @@ export class TrustConsensusEngine {
       );
     }
 
+    const valSetId = validAttestations[0]?.validatorSetId || commitment.validatorSetId || 'valset-genesis';
     const finalizedAtUs = BigInt(Date.now()) * 1000n;
     const certificateDigest = computeQuorumCertificateDigest(
       commitment.commitmentId,
       commitment.commitmentDigest.toString('hex'),
-      commitment.validatorSetId,
+      valSetId,
       commitment.epoch,
       validAttestations.length,
       this.totalValidators,
@@ -126,7 +128,7 @@ export class TrustConsensusEngine {
     const certificate: QuorumCertificate = {
       commitmentId: commitment.commitmentId,
       commitmentDigest: commitment.commitmentDigest,
-      validatorSetId: commitment.validatorSetId,
+      validatorSetId: valSetId,
       epoch: commitment.epoch,
       attestations: validAttestations,
       quorumCount: validAttestations.length,
@@ -150,7 +152,7 @@ export class TrustConsensusEngine {
         finalizedAtUs: finalizedAtUs.toString(),
       },
       commitment.epoch,
-      commitment.validatorSetId,
+      valSetId,
       commitment.tenantId,
       commitment.databaseId
     );

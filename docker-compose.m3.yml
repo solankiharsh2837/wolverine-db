@@ -1,0 +1,164 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: wdb-postgres
+    environment:
+      POSTGRES_DB: wolverine_prod
+      POSTGRES_USER: wdb_admin
+      POSTGRES_PASSWORD: wdb_secure_password
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wdb_admin -d wolverine_prod"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  wolverine-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wdb-agent
+    command: ["node", "dist/bin/wdb-agent.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: "postgresql://wdb_admin:wdb_secure_password@postgres:5432/wolverine_prod"
+      GATEWAY_URL: "https://wolverine-gateway:8443"
+      AGENT_NODE_ID: "agent-customer-vpc-01"
+      TENANT_ID: "enterprise_fintech"
+      DATABASE_ID: "core_banking"
+      JOURNAL_PATH: "/data/agent/evidence.wdbjrn"
+    volumes:
+      - agent_journal:/data/agent
+      - certs:/etc/wolverine/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      wolverine-gateway:
+        condition: service_started
+
+  wolverine-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wdb-gateway
+    command: ["node", "dist/bin/wdb-gateway.js"]
+    environment:
+      NODE_ENV: production
+      PORT: "8443"
+      VALIDATOR_ENDPOINTS: "validator-1:9001,validator-2:9002,validator-3:9003,validator-4:9004,validator-5:9005"
+    ports:
+      - "8443:8443"
+    volumes:
+      - certs:/etc/wolverine/certs:ro
+    depends_on:
+      - validator-1
+      - validator-2
+      - validator-3
+      - validator-4
+      - validator-5
+
+  validator-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wdb-validator-1
+    command: ["node", "dist/bin/wdb-validator.js", "--id", "validator-01", "--port", "9001"]
+    environment:
+      VALIDATOR_ID: "validator-01"
+      PORT: "9001"
+      JOURNAL_PATH: "/data/val/journal.wdbjrn"
+    volumes:
+      - val1_journal:/data/val
+      - certs:/etc/wolverine/certs:ro
+
+  validator-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wdb-validator-2
+    command: ["node", "dist/bin/wdb-validator.js", "--id", "validator-02", "--port", "9002"]
+    environment:
+      VALIDATOR_ID: "validator-02"
+      PORT: "9002"
+      JOURNAL_PATH: "/data/val/journal.wdbjrn"
+    volumes:
+      - val2_journal:/data/val
+      - certs:/etc/wolverine/certs:ro
+
+  validator-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wdb-validator-3
+    command: ["node", "dist/bin/wdb-validator.js", "--id", "validator-03", "--port", "9003"]
+    environment:
+      VALIDATOR_ID: "validator-03"
+      PORT: "9003"
+      JOURNAL_PATH: "/data/val/journal.wdbjrn"
+    volumes:
+      - val3_journal:/data/val
+      - certs:/etc/wolverine/certs:ro
+
+  validator-4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wdb-validator-4
+    command: ["node", "dist/bin/wdb-validator.js", "--id", "validator-04", "--port", "9004"]
+    environment:
+      VALIDATOR_ID: "validator-04"
+      PORT: "9004"
+      JOURNAL_PATH: "/data/val/journal.wdbjrn"
+    volumes:
+      - val4_journal:/data/val
+      - certs:/etc/wolverine/certs:ro
+
+  validator-5:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wdb-validator-5
+    command: ["node", "dist/bin/wdb-validator.js", "--id", "validator-05", "--port", "9005"]
+    environment:
+      VALIDATOR_ID: "validator-05"
+      PORT: "9005"
+      JOURNAL_PATH: "/data/val/journal.wdbjrn"
+    volumes:
+      - val5_journal:/data/val
+      - certs:/etc/wolverine/certs:ro
+
+  auditor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wdb-auditor
+    command: ["node", "dist/bin/wdb-auditor.js"]
+    environment:
+      GATEWAY_URL: "https://wolverine-gateway:8443"
+    volumes:
+      - certs:/etc/wolverine/certs:ro
+    depends_on:
+      - wolverine-gateway
+
+volumes:
+  pgdata:
+  agent_journal:
+  val1_journal:
+  val2_journal:
+  val3_journal:
+  val4_journal:
+  val5_journal:
+  certs:

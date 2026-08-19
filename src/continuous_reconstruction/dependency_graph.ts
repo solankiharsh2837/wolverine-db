@@ -106,15 +106,19 @@ export class StateDependencyGraphBuilder {
           const oldExpected = change.fieldSet.old as Record<string, unknown>;
           for (const [fName, fVal] of Object.entries(oldExpected)) {
             if (fVal !== undefined && priorState.values[fName] !== undefined) {
-              if (String(priorState.values[fName]) !== String(fVal)) {
+              if (canonicalizeJson(priorState.values[fName]) !== canonicalizeJson(fVal)) {
                 isConflict = true;
-                reason = `STATE_CONFLICT: Semantic state divergence on field "${fName}" (expected "${fVal}", reconstructed "${priorState.values[fName]}")`;
+                reason = `STATE_CONFLICT: Semantic state divergence on field "${fName}" (expected "${canonicalizeJson(fVal)}", reconstructed "${canonicalizeJson(priorState.values[fName])}")`;
                 this.conflictChangeIds.push(change.versionId);
                 break;
               }
             }
           }
         }
+      } else {
+        isConflict = true;
+        reason = 'STATE_CONFLICT: Mutation on non-existent row';
+        this.conflictChangeIds.push(change.versionId);
       }
     } else if (change.operation === MutationOperation.INSERT) {
       if (priorState && !priorState.isExcluded && priorState.operation !== MutationOperation.DELETE) {

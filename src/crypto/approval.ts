@@ -89,9 +89,12 @@ export function verifyApprovalEnvelope(
 ): void {
   // 1. Strict canonical separation of duties check (exact equality)
   const approverHex = envelope.approverPubkey.toString('hex').toLowerCase();
-  const requesterNormalized = envelope.requesterId.toLowerCase();
+  const requesterNormalized = envelope.requesterId.trim().toLowerCase();
+  const requesterCleanHex = requesterNormalized.startsWith('0x')
+    ? requesterNormalized.slice(2)
+    : requesterNormalized;
 
-  if (approverHex === requesterNormalized) {
+  if (approverHex === requesterNormalized || approverHex === requesterCleanHex) {
     throw new WolverineError(
       WolverineErrorCode.REQUESTER_IS_APPROVER,
       `Separation of duties violation: approver ${approverHex} cannot be requester ${envelope.requesterId}`

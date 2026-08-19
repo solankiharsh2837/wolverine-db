@@ -103,7 +103,10 @@ export class OfflineTrustProofVerifier {
   /**
    * Performs 100% offline verification of a PortableTrustProof without contacting any server.
    */
-  public static verifyPortableProof(proof: PortableTrustProof): OfflineProofVerificationResult {
+  public static verifyPortableProof(
+    proof: PortableTrustProof,
+    trustedValidatorKeys?: Map<string, Buffer>
+  ): OfflineProofVerificationResult {
     // 1. Check Protocol Version
     if (proof.proofVersion !== 1) {
       return {
@@ -169,13 +172,31 @@ export class OfflineTrustProofVerifier {
 
     // 4. Verify Validator Attestations & Quorum Count
     const valKeyMap = new Map<string, Buffer>();
-    for (const v of proof.validatorSet) {
-      valKeyMap.set(v.validatorId, Buffer.from(v.publicKeyHex, 'hex'));
+    if (trustedValidatorKeys) {
+      for (const v of proof.validatorSet) {
+        const trustedKey = trustedValidatorKeys.get(v.validatorId);
+        if (!trustedKey || Buffer.compare(trustedKey, Buffer.from(v.publicKeyHex, 'hex')) !== 0) {
+          return {
+            status: 'UNKNOWN_VALIDATOR_SET',
+            isValid: false,
+            reason: `Validator ${v.validatorId} public key does not match configured trusted root of trust`,
+          };
+        }
+        valKeyMap.set(v.validatorId, trustedKey);
+      }
+    } else {
+      for (const v of proof.validatorSet) {
+        valKeyMap.set(v.validatorId, Buffer.from(v.publicKeyHex, 'hex'));
+      }
     }
 
-    let validAttestationCount = 0;
+    const verifiedValidators = new Set<string>();
 
     for (const att of proof.validatorAttestations) {
+      if (verifiedValidators.has(att.validatorId)) {
+        continue;
+      }
+
       const pubKey = valKeyMap.get(att.validatorId);
       if (!pubKey) continue;
 
@@ -187,7 +208,8 @@ export class OfflineTrustProofVerifier {
         proof.commitment.commitmentId,
         att.validatorId,
         Buffer.from(att.observedCommitmentDigestHex, 'hex'),
-        BigInt(att.timestampUs)
+        BigInt(att.timestampUs),
+        proof.quorumCertificate.validatorSetId
       );
 
       try {
@@ -201,18 +223,18 @@ export class OfflineTrustProofVerifier {
         });
 
         if (crypto.verify(null, attDigest, pubKeyObject, Buffer.from(att.signatureHex, 'hex'))) {
-          validAttestationCount++;
+          verifiedValidators.add(att.validatorId);
         }
       } catch {
         // Invalid signature ignored
       }
     }
 
-    if (validAttestationCount < proof.quorumCertificate.quorumCount) {
+    if (verifiedValidators.size < proof.quorumCertificate.quorumCount) {
       return {
         status: 'INVALID_QUORUM',
         isValid: false,
-        reason: `Only ${validAttestationCount}/${proof.quorumCertificate.quorumCount} valid validator attestations found`,
+        reason: `Only ${verifiedValidators.size}/${proof.quorumCertificate.quorumCount} valid unique validator attestations found`,
       };
     }
 
@@ -229,7 +251,7 @@ export class OfflineTrustProofVerifier {
     return {
       status: 'VALID',
       isValid: true,
-      reason: `Proof verified: Quorum ${validAttestationCount}/${proof.quorumCertificate.totalValidators} validators attested commitment at ledgerSeq ${proof.ledgerRecord.ledgerSeq}`,
+      reason: `Proof verified: Quorum ${verifiedValidators.size}/${proof.quorumCertificate.totalValidators} validators attested commitment at ledgerSeq ${proof.ledgerRecord.ledgerSeq}`,
       details: {
         tenantId: proof.tenantId,
         databaseId: proof.databaseId,

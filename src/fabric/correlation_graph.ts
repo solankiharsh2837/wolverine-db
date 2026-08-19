@@ -7,6 +7,7 @@ import {
   SecurityEventEnvelope,
 } from './types.js';
 import { canonicalizeJson } from '../binary/c14n.js';
+import { compareCanonicalStrings } from '../crypto/canonical.js';
 
 export class IncidentCorrelationGraph {
   public readonly incidentId: string;
@@ -104,17 +105,26 @@ export class IncidentCorrelationGraph {
   }
 
   public computeGraphRootDigest(): Buffer {
-    const serializedNodes = Array.from(this.nodes.values()).map((n) => ({
-      id: n.nodeId,
-      type: n.nodeType,
-      label: n.label,
-    }));
-    const serializedEdges = this.edges.map((e) => ({
-      src: e.sourceNodeId,
-      tgt: e.targetNodeId,
-      rel: e.relationship,
-      weight: e.weight,
-    }));
+    const serializedNodes = Array.from(this.nodes.values())
+      .map((n) => ({
+        id: n.nodeId,
+        type: n.nodeType,
+        label: n.label,
+      }))
+      .sort((a, b) => compareCanonicalStrings(a.id, b.id));
+
+    const serializedEdges = this.edges
+      .map((e) => ({
+        src: e.sourceNodeId,
+        tgt: e.targetNodeId,
+        rel: e.relationship,
+        weight: e.weight,
+      }))
+      .sort((a, b) => {
+        const keyA = `${a.src}:${a.tgt}:${a.rel}`;
+        const keyB = `${b.src}:${b.tgt}:${b.rel}`;
+        return compareCanonicalStrings(keyA, keyB);
+      });
 
     const canonicalGraph = canonicalizeJson({
       incidentId: this.incidentId,
@@ -122,6 +132,10 @@ export class IncidentCorrelationGraph {
       edges: serializedEdges,
     });
 
-    return crypto.createHash('sha256').update(Buffer.from(canonicalGraph, 'utf8')).digest();
+    const domain = Buffer.from('WDB:CORRELATION_GRAPH:v1:', 'utf8');
+    return crypto
+      .createHash('sha256')
+      .update(Buffer.concat([domain, Buffer.from(canonicalGraph, 'utf8')]))
+      .digest();
   }
 }

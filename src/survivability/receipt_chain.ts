@@ -70,7 +70,7 @@ export class ReceiptChain {
 
   public findLastVerifiedReceipt(): ImmutableTrustReceipt | null {
     let lastValid: ImmutableTrustReceipt | null = null;
-    let prevReceiptDigest: Buffer = Buffer.alloc(32, 0);
+    let prevRecordDigest: Buffer = Buffer.alloc(32, 0);
 
     for (let i = 0; i < this.receipts.length; i++) {
       const receipt = this.receipts[i]!;
@@ -82,15 +82,17 @@ export class ReceiptChain {
       }
 
       // 2. Verify chain predecessor linkage if present
-      if (receipt.portableProof.ledgerRecord.previousRecordDigestHex) {
+      if (receipt.portableProof?.ledgerRecord?.previousRecordDigestHex) {
         const pred = Buffer.from(receipt.portableProof.ledgerRecord.previousRecordDigestHex, 'hex');
-        if (i > 0 && Buffer.compare(pred, prevReceiptDigest) !== 0) {
-          // Break on predecessor mismatch
+        if (i > 0 && Buffer.compare(pred, prevRecordDigest) !== 0) {
+          break;
         }
       }
 
       lastValid = receipt;
-      prevReceiptDigest = Buffer.from(receipt.receiptDigestHex, 'hex');
+      if (receipt.portableProof?.ledgerRecord?.recordDigestHex) {
+        prevRecordDigest = Buffer.from(receipt.portableProof.ledgerRecord.recordDigestHex, 'hex');
+      }
     }
 
     return lastValid;
@@ -149,7 +151,7 @@ export class ReceiptChain {
       };
     }
 
-    // Verify all individual receipts
+    // Verify all individual receipts and predecessor hash continuity
     for (let i = 0; i < this.receipts.length; i++) {
       const receipt = this.receipts[i]!;
       const res = ImmutableTrustReceiptVerifier.verifyReceiptOffline(receipt);
@@ -160,6 +162,26 @@ export class ReceiptChain {
           lastVerifiedReceipt: i > 0 ? this.receipts[i - 1]! : null,
           error: `Invalid receipt signature/digest at index ${i}: ${res.status}`,
         };
+      }
+
+      if (i > 0) {
+        const prevReceipt = this.receipts[i - 1]!;
+        if (
+          receipt.portableProof?.ledgerRecord?.previousRecordDigestHex &&
+          prevReceipt.portableProof?.ledgerRecord?.recordDigestHex
+        ) {
+          if (
+            receipt.portableProof.ledgerRecord.previousRecordDigestHex.toLowerCase() !==
+            prevReceipt.portableProof.ledgerRecord.recordDigestHex.toLowerCase()
+          ) {
+            return {
+              isValid: false,
+              totalReceipts: this.receipts.length,
+              lastVerifiedReceipt: this.receipts[i - 1]!,
+              error: `Predecessor hash mismatch at index ${i}`,
+            };
+          }
+        }
       }
     }
 
