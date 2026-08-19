@@ -9,6 +9,7 @@ import {
   PortableTrustProof,
   TrustLedgerRecord,
 } from '../trust_network/types.js';
+import { verifyCustomerCommitment } from '../trust_network/commitment.js';
 import { WolverineTrustLedger } from '../trust_network/ledger.js';
 import { TrustConsensusEngine } from '../trust_network/consensus.js';
 import { PortableTrustProofGenerator } from '../trust_network/proof.js';
@@ -109,6 +110,14 @@ export class TrustGatewayServer {
       throw new WolverineError(
         WolverineErrorCode.UNAUTHORIZED_MUTATION,
         `Database ${commitment.databaseId} is not registered for tenant ${commitment.tenantId}`
+      );
+    }
+
+    // Cryptographically authenticate customer commitment signature at gateway ingress
+    if (!verifyCustomerCommitment(commitment, tenant.customerPubkey)) {
+      throw new WolverineError(
+        WolverineErrorCode.UNAUTHORIZED_MUTATION,
+        `Invalid commitment signature or customer public key mismatch for tenant ${commitment.tenantId}`
       );
     }
 
