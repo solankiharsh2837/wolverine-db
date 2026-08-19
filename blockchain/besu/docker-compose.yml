@@ -1,0 +1,135 @@
+version: '3.8'
+
+networks:
+  wolverine-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+services:
+  # Customer Database with Logical Replication Enabled
+  postgres:
+    image: postgres:16-alpine
+    container_name: wolverine-postgres
+    environment:
+      POSTGRES_USER: wdb_user
+      POSTGRES_PASSWORD: wdb_password
+      POSTGRES_DB: wolverine_prod
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=5"
+      - "-c"
+      - "max_wal_senders=5"
+    ports:
+      - "5434:5432"
+    networks:
+      wolverine-net:
+        ipv4_address: 172.28.0.10
+
+  # Besu Validator 1 (Primary RPC Node)
+  besu-validator-1:
+    image: hyperledger/besu:latest
+    container_name: besu-validator-1
+    environment:
+      - BESU_LOGGING=INFO
+    volumes:
+      - ./genesis/genesis.json:/opt/besu/genesis.json:ro
+      - ./config/config.toml:/opt/besu/config.toml:ro
+      - ./nodes/node-1/key:/opt/besu/key:ro
+      - besu-val-1-data:/opt/besu/data
+    command:
+      - "--config-file=/opt/besu/config.toml"
+      - "--node-private-key-file=/opt/besu/key"
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+    networks:
+      wolverine-net:
+        ipv4_address: 172.28.0.21
+
+  # Besu Validator 2
+  besu-validator-2:
+    image: hyperledger/besu:latest
+    container_name: besu-validator-2
+    volumes:
+      - ./genesis/genesis.json:/opt/besu/genesis.json:ro
+      - ./config/config.toml:/opt/besu/config.toml:ro
+      - ./nodes/node-2/key:/opt/besu/key:ro
+      - besu-val-2-data:/opt/besu/data
+    command:
+      - "--config-file=/opt/besu/config.toml"
+      - "--node-private-key-file=/opt/besu/key"
+      - "--bootnodes=enode://d860a01097f4014919e7265ad7350cb7547f8474ac4d634d210d0a00539645f7c016e7e195709214777d9b04f7b6070a2a16d3f2780e8e60f78f85f385c54c0e@172.28.0.21:30303"
+    networks:
+      wolverine-net:
+        ipv4_address: 172.28.0.22
+    depends_on:
+      - besu-validator-1
+
+  # Besu Validator 3
+  besu-validator-3:
+    image: hyperledger/besu:latest
+    container_name: besu-validator-3
+    volumes:
+      - ./genesis/genesis.json:/opt/besu/genesis.json:ro
+      - ./config/config.toml:/opt/besu/config.toml:ro
+      - ./nodes/node-3/key:/opt/besu/key:ro
+      - besu-val-3-data:/opt/besu/data
+    command:
+      - "--config-file=/opt/besu/config.toml"
+      - "--node-private-key-file=/opt/besu/key"
+      - "--bootnodes=enode://d860a01097f4014919e7265ad7350cb7547f8474ac4d634d210d0a00539645f7c016e7e195709214777d9b04f7b6070a2a16d3f2780e8e60f78f85f385c54c0e@172.28.0.21:30303"
+    networks:
+      wolverine-net:
+        ipv4_address: 172.28.0.23
+    depends_on:
+      - besu-validator-1
+
+  # Besu Validator 4
+  besu-validator-4:
+    image: hyperledger/besu:latest
+    container_name: besu-validator-4
+    volumes:
+      - ./genesis/genesis.json:/opt/besu/genesis.json:ro
+      - ./config/config.toml:/opt/besu/config.toml:ro
+      - ./nodes/node-4/key:/opt/besu/key:ro
+      - besu-val-4-data:/opt/besu/data
+    command:
+      - "--config-file=/opt/besu/config.toml"
+      - "--node-private-key-file=/opt/besu/key"
+      - "--bootnodes=enode://d860a01097f4014919e7265ad7350cb7547f8474ac4d634d210d0a00539645f7c016e7e195709214777d9b04f7b6070a2a16d3f2780e8e60f78f85f385c54c0e@172.28.0.21:30303"
+    networks:
+      wolverine-net:
+        ipv4_address: 172.28.0.24
+    depends_on:
+      - besu-validator-1
+
+  # Besu Validator 5
+  besu-validator-5:
+    image: hyperledger/besu:latest
+    container_name: besu-validator-5
+    volumes:
+      - ./genesis/genesis.json:/opt/besu/genesis.json:ro
+      - ./config/config.toml:/opt/besu/config.toml:ro
+      - ./nodes/node-5/key:/opt/besu/key:ro
+      - besu-val-5-data:/opt/besu/data
+    command:
+      - "--config-file=/opt/besu/config.toml"
+      - "--node-private-key-file=/opt/besu/key"
+      - "--bootnodes=enode://d860a01097f4014919e7265ad7350cb7547f8474ac4d634d210d0a00539645f7c016e7e195709214777d9b04f7b6070a2a16d3f2780e8e60f78f85f385c54c0e@172.28.0.21:30303"
+    networks:
+      wolverine-net:
+        ipv4_address: 172.28.0.25
+    depends_on:
+      - besu-validator-1
+
+volumes:
+  besu-val-1-data:
+  besu-val-2-data:
+  besu-val-3-data:
+  besu-val-4-data:
+  besu-val-5-data:

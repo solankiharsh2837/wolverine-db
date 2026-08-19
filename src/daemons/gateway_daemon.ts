@@ -1,5 +1,5 @@
 import { TrustGatewayServer } from '../runtime/gateway.js';
-import { DirectMemoryNetworkTransport } from '../runtime/network_transport.js';
+import { INetworkTransport, DirectMemoryNetworkTransport } from '../runtime/network_transport.js';
 
 export interface StandaloneGatewayOptions {
   id: string;
@@ -13,7 +13,7 @@ export interface StandaloneGatewayOptions {
 export class StandaloneGatewayProcess {
   public readonly gateway: TrustGatewayServer;
 
-  constructor(options: StandaloneGatewayOptions, transport: DirectMemoryNetworkTransport) {
+  constructor(options: StandaloneGatewayOptions, transport: INetworkTransport) {
     this.gateway = new TrustGatewayServer(
       {
         gatewayId: options.id,

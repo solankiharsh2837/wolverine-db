@@ -55,4 +55,9 @@ export enum WolverineErrorCode {
   // WDB7xx: Configuration Errors
   INVALID_CONFIGURATION = 'WDB701',
   MISSING_SECRET_KEY = 'WDB702',
+  KMS_OUTAGE = 'WDB703',
+
+  // WDB8xx: Network Transport Errors
+  NETWORK_ERROR = 'WDB801',
+  NETWORK_TIMEOUT = 'WDB802',
 }

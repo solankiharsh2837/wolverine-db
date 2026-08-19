@@ -1,11 +1,13 @@
 import { LedgerReplicaConfig, ReplicateRecordRpcRequest, ReplicateRecordRpcResponse } from './types.js';
 import { WolverineTrustLedger } from '../trust_network/ledger.js';
-import { DirectMemoryNetworkTransport } from './network_transport.js';
+import { INetworkTransport, DirectMemoryNetworkTransport } from './network_transport.js';
 
 export class TrustLedgerReplicaNode {
   public readonly config: LedgerReplicaConfig;
   private ledger: WolverineTrustLedger;
   private endpoint: string;
+
+  private grpcServer?: any;
 
   constructor(config: LedgerReplicaConfig) {
     this.config = config;
@@ -17,10 +19,26 @@ export class TrustLedgerReplicaNode {
     return this.ledger;
   }
 
-  public start(transport: DirectMemoryNetworkTransport): void {
-    transport.registerReplicateEndpoint(this.endpoint, async (req: ReplicateRecordRpcRequest): Promise<ReplicateRecordRpcResponse> => {
-      return this.handleReplicateRequest(req);
-    });
+  public start(transport: INetworkTransport): void {
+    if ('registerReplicateEndpoint' in transport) {
+      (transport as any).registerReplicateEndpoint(this.endpoint, async (req: ReplicateRecordRpcRequest): Promise<ReplicateRecordRpcResponse> => {
+        return this.handleReplicateRequest(req);
+      });
+    }
+  }
+
+  public async startGrpc(port: number, host: string, tlsConfig?: any): Promise<any> {
+    const { GrpcReplicateServer } = await import('./grpc_transport.js');
+    this.grpcServer = new GrpcReplicateServer(async (req) => this.handleReplicateRequest(req), tlsConfig);
+    await this.grpcServer.listen(port, host);
+    return this.grpcServer;
+  }
+
+  public async stop(): Promise<void> {
+    if (this.grpcServer) {
+      await this.grpcServer.close();
+      this.grpcServer = undefined;
+    }
   }
 
   public async handleReplicateRequest(req: ReplicateRecordRpcRequest): Promise<ReplicateRecordRpcResponse> {

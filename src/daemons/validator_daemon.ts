@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { ByzantineTrustValidator } from '../trust_service/byzantine_validator.js';
-import { DirectMemoryNetworkTransport } from '../runtime/network_transport.js';
+import { INetworkTransport, DirectMemoryNetworkTransport } from '../runtime/network_transport.js';
 import { AttestRpcRequest, AttestRpcResponse } from '../runtime/types.js';
 
 export interface StandaloneValidatorOptions {
@@ -34,8 +34,9 @@ export class StandaloneValidatorProcess {
     );
   }
 
-  public bind(transport: DirectMemoryNetworkTransport): void {
-    transport.registerAttestEndpoint(this.endpoint, async (req: AttestRpcRequest): Promise<AttestRpcResponse> => {
+  public bind(transport: INetworkTransport): void {
+    if ('registerAttestEndpoint' in transport) {
+      (transport as any).registerAttestEndpoint(this.endpoint, async (req: AttestRpcRequest): Promise<AttestRpcResponse> => {
       try {
         const customerPubkey = Buffer.from(req.tenantPubkeyHex, 'hex');
         const attestation = this.validator.attestCommitment(req.commitment, customerPubkey);
@@ -49,6 +50,7 @@ export class StandaloneValidatorProcess {
           error: err.message,
         };
       }
-    });
+      });
+    }
   }
 }

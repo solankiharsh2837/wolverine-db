@@ -27,7 +27,14 @@
     "demo:v11": "tsc && node ./dist/demo/run_v11.js",
     "demo:v12": "tsc && node ./dist/demo/run_v12.js",
     "demo:killer": "tsc && node ./dist/demo/run_killer_demo.js",
-    "demo:ssip": "tsc && node ./dist/demo/run_killer_demo.js",
+    "demo:besu": "tsc && node ./dist/demo/besu_live_demo.js",
+    "demo:besu-live": "tsc && node ./dist/demo/besu_live_demo.js",
+    "demo:besu-simulated": "tsc && node ./dist/demo/besu_simulated_demo.js",
+    "besu:up": "tsc && node ./dist/blockchain/besu/network_ctrl.js up",
+    "besu:down": "tsc && node ./dist/blockchain/besu/network_ctrl.js down",
+    "besu:status": "tsc && node ./dist/blockchain/besu/status.js",
+    "besu:deploy": "tsc && node ./dist/blockchain/besu/deploy.js",
+    "besu:test": "vitest run tests/blockchain/",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
@@ -61,11 +68,13 @@
   "homepage": "https://github.com/solankiharsh2837/wolverine-db#readme",
   "dependencies": {
     "commander": "^12.0.0",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "viem": "^2.55.19"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/pg": "^8.11.0",
+    "solc": "^0.8.36",
     "typescript": "^5.3.3",
     "vitest": "^1.2.0"
   }

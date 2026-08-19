@@ -1,12 +1,14 @@
 import crypto from 'node:crypto';
 import { ValidatorNodeConfig, AttestRpcRequest, AttestRpcResponse } from './types.js';
 import { TrustValidator } from '../trust_network/validator.js';
-import { DirectMemoryNetworkTransport } from './network_transport.js';
+import { INetworkTransport, DirectMemoryNetworkTransport } from './network_transport.js';
 
 export class TrustValidatorDaemon {
   public readonly config: ValidatorNodeConfig;
   private validator: TrustValidator;
   private endpoint: string;
+
+  private grpcServer?: any;
 
   constructor(
     config: ValidatorNodeConfig,
@@ -21,10 +23,26 @@ export class TrustValidatorDaemon {
     return this.validator.publicKey;
   }
 
-  public start(transport: DirectMemoryNetworkTransport): void {
-    transport.registerAttestEndpoint(this.endpoint, async (req: AttestRpcRequest): Promise<AttestRpcResponse> => {
-      return this.handleAttestRequest(req);
-    });
+  public start(transport: INetworkTransport): void {
+    if ('registerAttestEndpoint' in transport) {
+      (transport as any).registerAttestEndpoint(this.endpoint, async (req: AttestRpcRequest): Promise<AttestRpcResponse> => {
+        return this.handleAttestRequest(req);
+      });
+    }
+  }
+
+  public async startGrpc(port: number, host: string, tlsConfig?: any): Promise<any> {
+    const { GrpcAttestServer } = await import('./grpc_transport.js');
+    this.grpcServer = new GrpcAttestServer(async (req) => this.handleAttestRequest(req), tlsConfig);
+    await this.grpcServer.listen(port, host);
+    return this.grpcServer;
+  }
+
+  public async stop(): Promise<void> {
+    if (this.grpcServer) {
+      await this.grpcServer.close();
+      this.grpcServer = undefined;
+    }
   }
 
   public async handleAttestRequest(req: AttestRpcRequest): Promise<AttestRpcResponse> {
