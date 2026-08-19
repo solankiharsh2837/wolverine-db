@@ -14,6 +14,7 @@ import { PolicyGate } from '../sentinel/policy_gate.js';
 import { encodeApprovalPayload, SignedApprovalEnvelope } from '../crypto/approval.js';
 import { RecoveryProposal } from '../engine/recovery.js';
 import { RecoveryProvenanceEngine } from '../engine/recovery_provenance.js';
+import { IApprovalNonceStore, InMemoryNonceStore } from '../engine/nonce_store.js';
 import { canonicalizeJson } from '../binary/c14n.js';
 
 export interface ContinuousReconstructionWorkflowOptions extends ContinuousHistoryInput {
@@ -23,6 +24,7 @@ export interface ContinuousReconstructionWorkflowOptions extends ContinuousHisto
   evmAnchorAdapter: EvmAnchorAdapter;
   registeredScopes: string[];
   approverKeys?: Array<{ publicKey: Buffer; privateKey: crypto.KeyObject }>;
+  nonceStore?: IApprovalNonceStore;
 }
 
 export class ContinuousStateReconstructionEngine {
@@ -162,7 +164,7 @@ export class ContinuousStateReconstructionEngine {
     };
 
     const trustedApprovers = options.approverKeys.map((k) => k.publicKey);
-    const consumedNonces = new Set<string>();
+    const nonceStore = options.nonceStore ?? new InMemoryNonceStore();
     const newCommitSeq = analysis.maximumReconstructableCommitSeq + 1n;
 
     // 3. Atomic State Recovery
@@ -170,7 +172,7 @@ export class ContinuousStateReconstructionEngine {
       recoveryProposal,
       signedEnvelope,
       trustedApprovers,
-      consumedNonces,
+      nonceStore,
       options.externalVaultStore,
       newCommitSeq,
       analysis.resultingMerkleRoot,

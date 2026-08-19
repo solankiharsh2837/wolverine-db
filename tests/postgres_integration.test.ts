@@ -14,6 +14,7 @@ describe('PostgreSQL End-to-End Change Capture & Tamper-Recovery Loop', () => {
   it('generates valid wolverine_sys schema SQL and trigger PL/pgSQL statements', () => {
     expect(CREATE_WOLVERINE_SYS_SCHEMA_SQL).toContain('CREATE SCHEMA IF NOT EXISTS wolverine_sys');
     expect(CREATE_WOLVERINE_SYS_SCHEMA_SQL).toContain('CREATE TABLE IF NOT EXISTS wolverine_sys.change_history');
+    expect(CREATE_WOLVERINE_SYS_SCHEMA_SQL).toContain('CREATE TABLE IF NOT EXISTS wolverine_sys.approval_nonces');
 
     const triggerSql = generateTableTriggerSql('public', 'users', ['id']);
     expect(triggerSql).toContain('wolverine_sys_trg_public_users');
