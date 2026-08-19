@@ -11,6 +11,7 @@ import {
   computeAttestationDigest,
   WolverineErrorCode,
   WolverineError,
+  createSignedCustomerCommitment,
 } from '../../src/index.js';
 
 describe('WolverineDB v1.3.1 Trust Boundary Hardening & Convergence Suite', () => {
@@ -140,19 +141,20 @@ describe('WolverineDB v1.3.1 Trust Boundary Hardening & Convergence Suite', () =
       const customerPub = customerKeys.publicKey.export({ type: 'spki', format: 'der' }).subarray(-32);
       gateway.registerTenant('tenant-telemetry', customerPub, 'db-telemetry');
 
-      const commitment = {
-        commitmentId: crypto.randomUUID(),
-        tenantId: 'tenant-telemetry',
-        databaseId: 'db-telemetry',
-        checkpointId: '00000000-0000-0000-0000-000000001001',
-        commitSeq: 1001n,
-        checkpointDigest: Buffer.alloc(32, 0x11),
-        previousTrustCommitment: Buffer.alloc(32, 0),
-        epoch: 1,
-        customerSignature: Buffer.alloc(64, 0),
-        commitmentDigest: Buffer.alloc(32, 0x22),
-        timestampUs: 1723500000000000n,
-      };
+      const commitment = createSignedCustomerCommitment(
+        {
+          commitmentId: crypto.randomUUID(),
+          tenantId: 'tenant-telemetry',
+          databaseId: 'db-telemetry',
+          checkpointId: '00000000-0000-0000-0000-000000001001',
+          commitSeq: 1001n,
+          checkpointDigest: Buffer.alloc(32, 0x11),
+          previousTrustCommitment: Buffer.alloc(32, 0),
+          epoch: 1,
+        },
+        customerKeys.privateKey,
+        customerPub
+      );
 
       await expect(gateway.ingestCommitment(commitment)).rejects.toThrow();
 
