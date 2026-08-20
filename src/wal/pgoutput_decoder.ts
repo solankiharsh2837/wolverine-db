@@ -232,6 +232,59 @@ export class PgOutputDecoder {
         };
       }
 
+      case 'S': {
+        // Stream Start
+        const xid = buffer.readUInt32BE(offset);
+        offset += 4;
+        const firstSegment = buffer[offset++]!;
+        return {
+          type: 'S',
+          xid: String(xid),
+          firstSegment,
+        };
+      }
+
+      case 'E': {
+        // Stream Stop
+        return { type: 'E' };
+      }
+
+      case 'c': {
+        // Stream Commit
+        const xid = buffer.readUInt32BE(offset);
+        offset += 4;
+        const flags = buffer[offset++]!;
+        const commitLsnBig = buffer.readBigUInt64BE(offset);
+        offset += 8;
+        const endLsnBig = buffer.readBigUInt64BE(offset);
+        offset += 8;
+        const commitTimeUs = buffer.readBigInt64BE(offset);
+        offset += 8;
+
+        return {
+          type: 'c',
+          xid: String(xid),
+          flags,
+          commitLsn: this.formatLsn(commitLsnBig),
+          endLsn: this.formatLsn(endLsnBig),
+          commitTimeUs,
+        };
+      }
+
+      case 'A': {
+        // Stream Abort
+        const xid = buffer.readUInt32BE(offset);
+        offset += 4;
+        const subxid = buffer.readUInt32BE(offset);
+        offset += 4;
+
+        return {
+          type: 'A',
+          xid: String(xid),
+          subxid: String(subxid),
+        };
+      }
+
       default:
         throw new WolverineError(
           WolverineErrorCode.MALFORMED_FIELD_PAYLOAD,

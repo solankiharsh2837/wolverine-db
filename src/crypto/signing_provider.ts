@@ -71,6 +71,7 @@ export interface KmsConfig {
  * Hardware Security Module / Cloud KMS Signing Provider.
  * Allows enterprise customers to sign database state commitments using AWS KMS, GCP KMS,
  * or Azure Key Vault without ever exposing raw private keys to Node.js memory.
+ * Fails closed with zero HMAC or unauthenticated simulation fallbacks.
  */
 export class CloudKmsSigningProvider implements ISigningProvider {
   private config: KmsConfig;
@@ -102,13 +103,13 @@ export class CloudKmsSigningProvider implements ISigningProvider {
   }
 
   public async sign(digest: Buffer): Promise<Buffer> {
-    // In production, dispatches to AWS/GCP KMS Asymmetric Sign API (Ed25519)
     if (this.mockKey) {
       return crypto.sign(null, digest, this.mockKey);
     }
-    // Deterministic simulation fallback
-    const hmac = crypto.createHmac('sha512', this.config.keyArn).update(digest).digest();
-    return hmac.subarray(0, 64);
+    throw new WolverineError(
+      WolverineErrorCode.KMS_OUTAGE,
+      `[FAIL-CLOSED] ${this.config.provider} signer unconfigured for key ${this.config.keyArn}. Zero HMAC fallbacks allowed.`
+    );
   }
 }
 
@@ -122,6 +123,7 @@ export interface HsmConfig {
 
 /**
  * PKCS#11 Hardware Security Module Provider for sovereign on-premise deployments.
+ * Fails closed if HSM token session is disconnected.
  */
 export class HsmSigningProvider implements ISigningProvider {
   private config: HsmConfig;
@@ -150,7 +152,9 @@ export class HsmSigningProvider implements ISigningProvider {
     if (this.mockKey) {
       return crypto.sign(null, digest, this.mockKey);
     }
-    const hmac = crypto.createHmac('sha512', this.getKeyId()).update(digest).digest();
-    return hmac.subarray(0, 64);
+    throw new WolverineError(
+      WolverineErrorCode.KMS_OUTAGE,
+      `[FAIL-CLOSED] HSM session disconnected for ${this.getKeyId()}. Zero simulation fallbacks allowed.`
+    );
   }
 }

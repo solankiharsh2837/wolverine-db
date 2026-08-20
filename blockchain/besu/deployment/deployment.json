@@ -1,10 +1,10 @@
 {
   "contractName": "WolverineTrustRegistry",
-  "contractAddress": "0xf2e246bb76df876cef8b38ae84130f4f55de395b",
-  "deploymentTxHash": "0x929e4650d05a750a7d79030a6b90799a57db6444ca3d00fdd7f5e3c137c67448",
-  "blockNumber": "61",
-  "blockHash": "0x45f686d14e4e9a8c511a51d596c9be570bc45afbb6c9ca177f248f82c4145a80",
+  "contractAddress": "0x66a15edcc3b50a663e72f1457ffd49b9ae284ddc",
+  "deploymentTxHash": "0x9d894b67a1e1c1066107f4c6f603d0b677914d8ae91e9509838449395f2c996e",
+  "blockNumber": "50658",
+  "blockHash": "0xbda21bbfcb06d0f86c0fbcb1848f75f91c02f123c8f1ce841db10bcd26133acd",
   "chainId": 13370,
-  "deployedAt": "2026-08-19T22:12:34.206Z",
+  "deployedAt": "2026-08-20T14:21:02.271Z",
   "deployerAddress": "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
 }

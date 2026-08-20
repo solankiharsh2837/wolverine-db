@@ -4,16 +4,26 @@ import { TlsConfig, replacer, reviver } from './grpc_transport.js';
 import { TrustCommitment, PortableTrustProof, QuorumCertificate, TrustLedgerRecord } from '../trust_network/types.js';
 import { ImmutableTrustReceipt } from '../bft_hardening/types.js';
 import { ImmutableTrustReceiptGenerator } from '../trust_receipt/receipt.js';
+import { UniversalTrustReceipt, UniversalTrustReceiptGenerator } from '../receipts/universal_receipt.js';
+import { CanonicalTrustCommitmentV3, computeCanonicalCommitmentDigest } from '../protocol/commitment_v3.js';
+import { BesuClient } from '../blockchain/besu/client.js';
 import { WolverineError, WolverineErrorCode } from '../errors/index.js';
 
 export interface GatewayIngestionRequest {
   commitment: TrustCommitment;
 }
 
+export interface GatewayIngestionRequestV3 {
+  commitment: CanonicalTrustCommitmentV3;
+  customerSignatureHex: string;
+  agentSignatureHex: string;
+}
+
 export interface GatewayIngestionResponse {
   success: boolean;
   commitmentId?: string;
   receipt?: ImmutableTrustReceipt;
+  universalReceipt?: UniversalTrustReceipt;
   proof?: PortableTrustProof;
   error?: string;
 }
@@ -21,25 +31,29 @@ export interface GatewayIngestionResponse {
 export interface GatewayStatusResponse {
   gatewayId: string;
   isOnline: boolean;
+  besuHealthy?: boolean;
   ledgerHeadSeq: string;
 }
 
 /**
- * Customer-facing HTTP/2 server that exposes the Trust Gateway as a network service.
- * Accepts TrustCommitment submissions over HTTP/2 POST to /ingest and returns
- * trust receipts with portable proofs.
- *
- * This is the production replacement for the in-process gateway reference used in tests.
+ * Customer-facing HTTP/2 server that exposes the Trust Gateway as a network router.
+ * In the hardened architecture, the Gateway routes dual-signed commitments directly
+ * to the authoritative Hyperledger Besu QBFT network and returns Universal Trust Receipts.
  */
 export class GrpcGatewayServer {
   private server: http2.Http2Server | http2.Http2SecureServer;
-  private readonly gateway: TrustGatewayServer;
+  private readonly gateway?: TrustGatewayServer;
+  private readonly besuClient?: BesuClient;
 
   constructor(
-    gateway: TrustGatewayServer,
+    gatewayOrClient: TrustGatewayServer | BesuClient,
     tlsConfig?: TlsConfig
   ) {
-    this.gateway = gateway;
+    if (gatewayOrClient instanceof BesuClient) {
+      this.besuClient = gatewayOrClient;
+    } else {
+      this.gateway = gatewayOrClient;
+    }
 
     if (tlsConfig) {
       this.server = http2.createSecureServer({
@@ -56,8 +70,10 @@ export class GrpcGatewayServer {
       const path = headers[http2.constants.HTTP2_HEADER_PATH] as string;
       const method = headers[http2.constants.HTTP2_HEADER_METHOD] as string;
 
-      if (path === '/ingest' && method === 'POST') {
-        this.handleIngest(stream);
+      if (path === '/ingest-v3' && method === 'POST') {
+        this.handleIngestV3(stream);
+      } else if (path === '/ingest' && method === 'POST') {
+        this.handleIngestLegacy(stream);
       } else if (path === '/status' && method === 'GET') {
         this.handleStatus(stream);
       } else if (path === '/health' && method === 'GET') {
@@ -69,7 +85,94 @@ export class GrpcGatewayServer {
     });
   }
 
-  private handleIngest(stream: http2.ServerHttp2Stream): void {
+  private handleIngestV3(stream: http2.ServerHttp2Stream): void {
+    let data = '';
+    stream.setEncoding('utf8');
+    stream.on('data', (chunk) => {
+      data += chunk;
+    });
+    stream.on('end', async () => {
+      try {
+        const req = JSON.parse(data, reviver) as GatewayIngestionRequestV3;
+
+        if (!req.commitment || !this.besuClient) {
+          stream.respond({
+            [http2.constants.HTTP2_HEADER_STATUS]: 400,
+            [http2.constants.HTTP2_HEADER_CONTENT_TYPE]: 'application/json',
+          });
+          stream.end(JSON.stringify({ success: false, error: 'Missing commitment or BesuClient unconfigured' }, replacer));
+          return;
+        }
+
+        const digestHex = computeCanonicalCommitmentDigest(req.commitment);
+
+        // Submit directly to authoritative Besu QBFT
+        const besuRes = await this.besuClient.submitCommitment({
+          tenantId: req.commitment.tenantId,
+          databaseId: req.commitment.databaseId,
+          checkpointIdHex: req.commitment.checkpointId.replace(/-/g, ''),
+          commitSeq: req.commitment.commitSeq,
+          epoch: req.commitment.epoch,
+          checkpointDigestHex: req.commitment.checkpointDigestHex,
+          stateMerkleRootHex: req.commitment.stateMerkleRootHex,
+          changeChainHeadHex: req.commitment.changeChainHeadHex,
+          previousCommitmentDigestHex: req.commitment.previousCommitmentDigestHex,
+          commitmentDigestHex: `0x${digestHex}`,
+          logicalTimestampUs: req.commitment.logicalTimestampUs,
+          protocolVersion: req.commitment.protocolVersion,
+          agentSignatureHex: req.agentSignatureHex,
+          customerSignatureHex: req.customerSignatureHex,
+        });
+
+        // Produce authoritative Universal Trust Receipt
+        const universalReceipt = UniversalTrustReceiptGenerator.createReceipt({
+          tenantId: req.commitment.tenantId,
+          databaseId: req.commitment.databaseId,
+          evidencePlane: {
+            checkpointId: req.commitment.checkpointId,
+            commitSeq: req.commitment.commitSeq.toString(),
+            lsn: req.commitment.lsn,
+            checkpointDigestHex: req.commitment.checkpointDigestHex,
+            stateMerkleRootHex: req.commitment.stateMerkleRootHex,
+            changeChainHeadHex: req.commitment.changeChainHeadHex,
+            agentAttestationHex: req.agentSignatureHex,
+            customerAuthorizationHex: req.customerSignatureHex,
+          },
+          trustPlane: {
+            networkId: req.commitment.networkId,
+            chainId: req.commitment.chainId,
+            blockchainTransactionHash: besuRes.txHash,
+            blockNumber: besuRes.blockNumber.toString(),
+            blockHash: besuRes.blockHash,
+            finalityStatus: 'FINALIZED',
+            contractAddress: besuRes.contractAddress,
+            previousCommitmentDigestHex: req.commitment.previousCommitmentDigestHex,
+          },
+        });
+
+        const response: GatewayIngestionResponse = {
+          success: true,
+          commitmentId: req.commitment.checkpointId,
+          universalReceipt,
+        };
+
+        stream.respond({
+          [http2.constants.HTTP2_HEADER_STATUS]: 200,
+          [http2.constants.HTTP2_HEADER_CONTENT_TYPE]: 'application/json',
+        });
+        stream.end(JSON.stringify(response, replacer));
+      } catch (err: any) {
+        const status = err instanceof WolverineError ? 422 : 500;
+        stream.respond({
+          [http2.constants.HTTP2_HEADER_STATUS]: status,
+          [http2.constants.HTTP2_HEADER_CONTENT_TYPE]: 'application/json',
+        });
+        stream.end(JSON.stringify({ success: false, error: err.message ?? 'Internal gateway error' }, replacer));
+      }
+    });
+  }
+
+  private handleIngestLegacy(stream: http2.ServerHttp2Stream): void {
     let data = '';
     stream.setEncoding('utf8');
     stream.on('data', (chunk) => {
@@ -79,7 +182,7 @@ export class GrpcGatewayServer {
       try {
         const req = JSON.parse(data, reviver) as GatewayIngestionRequest;
 
-        if (!req.commitment || !req.commitment.commitmentId) {
+        if (!req.commitment || !req.commitment.commitmentId || !this.gateway) {
           stream.respond({
             [http2.constants.HTTP2_HEADER_STATUS]: 400,
             [http2.constants.HTTP2_HEADER_CONTENT_TYPE]: 'application/json',
@@ -89,8 +192,6 @@ export class GrpcGatewayServer {
         }
 
         const result = await this.gateway.ingestCommitment(req.commitment);
-
-        // Generate commercial immutable trust receipt
         const receipt = ImmutableTrustReceiptGenerator.generateReceipt(
           result.proof,
           result.ledgerRecord.recordDigest
@@ -114,20 +215,25 @@ export class GrpcGatewayServer {
           [http2.constants.HTTP2_HEADER_STATUS]: status,
           [http2.constants.HTTP2_HEADER_CONTENT_TYPE]: 'application/json',
         });
-        stream.end(JSON.stringify({
-          success: false,
-          error: err.message ?? 'Internal gateway error',
-        }, replacer));
+        stream.end(JSON.stringify({ success: false, error: err.message ?? 'Internal gateway error' }, replacer));
       }
     });
   }
 
-  private handleStatus(stream: http2.ServerHttp2Stream): void {
-    const ledger = this.gateway.getLedger();
+  private async handleStatus(stream: http2.ServerHttp2Stream): Promise<void> {
+    let besuHealthy = false;
+    if (this.besuClient) {
+      besuHealthy = await this.besuClient.isHealthy();
+    }
+
+    const gatewayId = this.gateway ? this.gateway.gatewayId : 'wolverine-gateway-router';
+    const ledgerHeadSeq = this.gateway ? this.gateway.getLedger().getCurrentSequence().toString() : '0';
+
     const response: GatewayStatusResponse = {
-      gatewayId: this.gateway.gatewayId,
+      gatewayId,
       isOnline: true,
-      ledgerHeadSeq: ledger.getCurrentSequence().toString(),
+      besuHealthy,
+      ledgerHeadSeq,
     };
     stream.respond({
       [http2.constants.HTTP2_HEADER_STATUS]: 200,
@@ -160,9 +266,5 @@ export class GrpcGatewayServer {
         resolve();
       });
     });
-  }
-
-  public getGateway(): TrustGatewayServer {
-    return this.gateway;
   }
 }

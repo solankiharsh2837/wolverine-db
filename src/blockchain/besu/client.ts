@@ -17,10 +17,13 @@ import {
 } from './types.js';
 import { WolverineError, WolverineErrorCode } from '../../errors/index.js';
 
+import { BesuRpcPool } from './rpc_pool.js';
+
 export class BesuClient {
   public readonly config: BesuNodeConfig;
   private publicClient?: PublicClient;
   private walletClient?: WalletClient;
+  private rpcPool?: BesuRpcPool;
   private customRpcHandler?: (method: string, params: any[]) => Promise<any>;
 
   constructor(config: BesuNodeConfig, customRpcHandler?: (method: string, params: any[]) => Promise<any>) {
@@ -37,6 +40,12 @@ export class BesuClient {
         },
       });
 
+      this.rpcPool = new BesuRpcPool({
+        nodes: [config.rpcUrl],
+        chainId: config.chainId,
+        timeoutMs: config.timeoutMs ?? 5000,
+      });
+
       this.publicClient = createPublicClient({
         chain,
         transport: http(config.rpcUrl, { timeout: config.timeoutMs ?? 5000 }),
@@ -51,6 +60,75 @@ export class BesuClient {
         });
       }
     }
+  }
+
+  /**
+   * Registers a tenant with designated customer signing key and authorized gateway.
+   */
+  public async registerTenant(
+    tenantId: string,
+    customerSigningAddress: `0x${string}`,
+    authorizedGateway: `0x${string}`
+  ): Promise<{ txHash: `0x${string}`; blockNumber: bigint }> {
+    if (this.customRpcHandler) {
+      return this.customRpcHandler('registerTenant', [tenantId, customerSigningAddress, authorizedGateway]);
+    }
+
+    if (!this.walletClient || !this.publicClient) {
+      throw new WolverineError(
+        WolverineErrorCode.INVALID_CONFIGURATION,
+        'BesuClient requires walletClient and publicClient to register tenant'
+      );
+    }
+
+    try {
+      const { request } = await this.publicClient.simulateContract({
+        account: this.walletClient.account,
+        address: this.config.contractAddress,
+        abi: WOLVERINE_TRUST_REGISTRY_ABI,
+        functionName: 'registerTenant',
+        args: [tenantId, customerSigningAddress, authorizedGateway],
+      });
+
+      const txHash = await this.walletClient.writeContract(request);
+      const receipt = await this.publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        confirmations: 1,
+      });
+
+      return {
+        txHash: receipt.transactionHash,
+        blockNumber: receipt.blockNumber,
+      };
+    } catch (err: any) {
+      throw new WolverineError(
+        WolverineErrorCode.NETWORK_ERROR,
+        `Failed to register tenant on Besu: ${err.message}`
+      );
+    }
+  }
+
+  /**
+   * Retrieves tenant configuration from contract.
+   */
+  public async getTenant(tenantId: string): Promise<any> {
+    if (this.customRpcHandler) {
+      return this.customRpcHandler('getTenant', [tenantId]);
+    }
+
+    if (!this.publicClient) {
+      throw new WolverineError(
+        WolverineErrorCode.INVALID_CONFIGURATION,
+        'BesuClient publicClient not configured'
+      );
+    }
+
+    return this.publicClient.readContract({
+      address: this.config.contractAddress,
+      abi: WOLVERINE_TRUST_REGISTRY_ABI,
+      functionName: 'getTenant',
+      args: [tenantId],
+    });
   }
 
   /**

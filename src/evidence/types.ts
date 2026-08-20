@@ -77,7 +77,11 @@ export type PgOutputMessage =
   | { type: 'I'; relationId: number; tupleData: Record<string, unknown> }
   | { type: 'U'; relationId: number; keyTupleData?: Record<string, unknown>; oldTupleData?: Record<string, unknown>; tupleData: Record<string, unknown> }
   | { type: 'D'; relationId: number; keyTupleData?: Record<string, unknown>; oldTupleData?: Record<string, unknown> }
-  | { type: 'T'; options: number; relationIds: number[] };
+  | { type: 'T'; options: number; relationIds: number[] }
+  | { type: 'S'; xid: string; firstSegment: number }
+  | { type: 'E' }
+  | { type: 'c'; xid: string; flags: number; commitLsn: string; endLsn: string; commitTimeUs: bigint }
+  | { type: 'A'; xid: string; subxid: string };
 
 export interface PgOutputColumn {
   flags: number; // 1 if part of key

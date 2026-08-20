@@ -299,24 +299,17 @@ describe('Challenger 1 Empirical Verification & Stress Test Suite', () => {
   });
 
   describe('4. KMS Provider Fallbacks & Key Buffer Security (SEC-R2-03, SEC-R2-04)', () => {
-    it('proves CloudKmsSigningProvider computes HMAC with public keyArn instead of failing closed', async () => {
+    it('proves CloudKmsSigningProvider strictly fails closed with KMS_OUTAGE when unconfigured', async () => {
       const publicArn = 'arn:aws:kms:us-east-1:123456789012:key/public-key-id';
       const provider = new CloudKmsSigningProvider({
         provider: 'AWS_KMS',
         keyArn: publicArn,
         region: 'us-east-1',
+        publicKey: Buffer.alloc(32, 1),
       });
 
       const messageDigest = crypto.createHash('sha256').update('evidence-block-data').digest();
-      const signature = await provider.sign(messageDigest);
-
-      const expectedHmac = crypto.createHmac('sha512', publicArn)
-        .update(messageDigest)
-        .digest()
-        .subarray(0, 64);
-
-      expect(signature.equals(expectedHmac)).toBe(true);
-      // EMPIRICAL PROOF: Anyone knowing keyArn metadata can forge signatures in unconfigured environments!
+      await expect(provider.sign(messageDigest)).rejects.toThrow(/FAIL-CLOSED.*Zero HMAC fallbacks allowed/);
     });
 
     it('proves AwsKmsSigningProvider defaults public key to 32 zero bytes', () => {
@@ -403,13 +396,12 @@ describe('Challenger 1 Empirical Verification & Stress Test Suite', () => {
   });
 
   describe('6. PostgreSQL Replication Protocol Crash (SEC-R5-02)', () => {
-    it('proves PgOutputDecoder throws MALFORMED_FIELD_PAYLOAD on STREAM START (S) message', () => {
+    it('proves PgOutputDecoder successfully decodes STREAM START (S) message without crashing', () => {
       const decoder = new PgOutputDecoder();
       const streamStartBuf = Buffer.from('S\x00\x00\x00\x01\x00', 'binary');
 
-      expect(() => {
-        decoder.decodeMessage(streamStartBuf);
-      }).toThrowError(/Unknown pgoutput message type 'S'/);
+      const msg = decoder.decodeMessage(streamStartBuf);
+      expect(msg.type).toBe('S');
     });
   });
 });

@@ -176,36 +176,27 @@ describe('Challenger 2 Empirical Verification Suite', () => {
   });
 
   describe('R5: PostgreSQL 14+ Streaming Replication Protocol Crash (SEC-R5-02)', () => {
-    it('proves PgOutputDecoder throws MALFORMED_FIELD_PAYLOAD on STREAM START (S) message', () => {
+    it('proves PgOutputDecoder successfully decodes STREAM START (S) message without crashing', () => {
       const decoder = new PgOutputDecoder();
       const streamStartBuf = Buffer.from('S\x00\x00\x00\x01\x00', 'binary');
 
-      expect(() => {
-        decoder.decodeMessage(streamStartBuf);
-      }).toThrowError(/Unknown pgoutput message type 'S'/);
+      const msg = decoder.decodeMessage(streamStartBuf);
+      expect(msg.type).toBe('S');
     });
   });
 
   describe('R2: KMS Providers and Fail-Closed Invariants (SEC-R2-03, SEC-R2-04)', () => {
-    it('proves CloudKmsSigningProvider computes HMAC simulation using keyArn instead of failing closed', async () => {
+    it('proves CloudKmsSigningProvider strictly fails closed with KMS_OUTAGE when unconfigured', async () => {
       const { CloudKmsSigningProvider } = await import('../../src/crypto/signing_provider.js');
       const provider = new CloudKmsSigningProvider({
         provider: 'AWS_KMS',
         keyArn: 'arn:aws:kms:us-east-1:123456789012:key/public-visible-arn',
         region: 'us-east-1',
+        publicKey: Buffer.alloc(32, 1),
       });
 
       const digest = crypto.createHash('sha256').update('test-payload').digest();
-      const signature = await provider.sign(digest);
-
-      // Expected deterministic HMAC using keyArn as key
-      const expectedHmac = crypto.createHmac('sha512', 'arn:aws:kms:us-east-1:123456789012:key/public-visible-arn')
-        .update(digest)
-        .digest()
-        .subarray(0, 64);
-
-      expect(signature.equals(expectedHmac)).toBe(true);
-      // This empirically proves that anyone with the public ARN can forge KMS signatures in unconfigured environments!
+      await expect(provider.sign(digest)).rejects.toThrow(/FAIL-CLOSED.*Zero HMAC fallbacks allowed/);
     });
 
     it('proves AwsKmsSigningProvider defaults uninitialized public key to 32 zero bytes', async () => {

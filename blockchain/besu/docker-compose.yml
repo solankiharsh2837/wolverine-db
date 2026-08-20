@@ -46,7 +46,6 @@ services:
       - "--node-private-key-file=/opt/besu/key"
     ports:
       - "8545:8545"
-      - "8546:8546"
     networks:
       wolverine-net:
         ipv4_address: 172.28.0.21
@@ -64,6 +63,8 @@ services:
       - "--config-file=/opt/besu/config.toml"
       - "--node-private-key-file=/opt/besu/key"
       - "--bootnodes=enode://d860a01097f4014919e7265ad7350cb7547f8474ac4d634d210d0a00539645f7c016e7e195709214777d9b04f7b6070a2a16d3f2780e8e60f78f85f385c54c0e@172.28.0.21:30303"
+    ports:
+      - "8546:8545"
     networks:
       wolverine-net:
         ipv4_address: 172.28.0.22
@@ -83,6 +84,8 @@ services:
       - "--config-file=/opt/besu/config.toml"
       - "--node-private-key-file=/opt/besu/key"
       - "--bootnodes=enode://d860a01097f4014919e7265ad7350cb7547f8474ac4d634d210d0a00539645f7c016e7e195709214777d9b04f7b6070a2a16d3f2780e8e60f78f85f385c54c0e@172.28.0.21:30303"
+    ports:
+      - "8547:8545"
     networks:
       wolverine-net:
         ipv4_address: 172.28.0.23
@@ -102,6 +105,8 @@ services:
       - "--config-file=/opt/besu/config.toml"
       - "--node-private-key-file=/opt/besu/key"
       - "--bootnodes=enode://d860a01097f4014919e7265ad7350cb7547f8474ac4d634d210d0a00539645f7c016e7e195709214777d9b04f7b6070a2a16d3f2780e8e60f78f85f385c54c0e@172.28.0.21:30303"
+    ports:
+      - "8548:8545"
     networks:
       wolverine-net:
         ipv4_address: 172.28.0.24
@@ -121,6 +126,8 @@ services:
       - "--config-file=/opt/besu/config.toml"
       - "--node-private-key-file=/opt/besu/key"
       - "--bootnodes=enode://d860a01097f4014919e7265ad7350cb7547f8474ac4d634d210d0a00539645f7c016e7e195709214777d9b04f7b6070a2a16d3f2780e8e60f78f85f385c54c0e@172.28.0.21:30303"
+    ports:
+      - "8549:8545"
     networks:
       wolverine-net:
         ipv4_address: 172.28.0.25
