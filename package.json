@@ -36,6 +36,8 @@
     "besu:deploy": "tsc && node ./dist/blockchain/besu/deploy.js",
     "besu:test": "vitest run tests/blockchain/",
     "test:acceptance": "tsc && node ./dist/acceptance/live_acceptance.js",
+    "acceptance:kms:aws": "tsc && node ./dist/acceptance/aws_kms_besu_acceptance.js",
+    "acceptance:kms:gcp": "tsc && node ./dist/acceptance/gcp_kms_besu_acceptance.js",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
