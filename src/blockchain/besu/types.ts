@@ -19,6 +19,8 @@ export interface BesuStateCommitmentInput {
   previousCommitmentDigestHex: string; // 32 bytes hex
   commitmentDigestHex: string; // 32 bytes hex
   logicalTimestampUs: bigint;
+  lsn: string;
+  agentId: string;
   protocolVersion: number;
   agentSignatureHex: string;
   customerSignatureHex: string;

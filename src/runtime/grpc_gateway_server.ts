@@ -119,6 +119,8 @@ export class GrpcGatewayServer {
           previousCommitmentDigestHex: req.commitment.previousCommitmentDigestHex,
           commitmentDigestHex: `0x${digestHex}`,
           logicalTimestampUs: req.commitment.logicalTimestampUs,
+          lsn: req.commitment.lsn,
+          agentId: req.commitment.agentId,
           protocolVersion: req.commitment.protocolVersion,
           agentSignatureHex: req.agentSignatureHex,
           customerSignatureHex: req.customerSignatureHex,

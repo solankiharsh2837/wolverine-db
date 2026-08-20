@@ -97,6 +97,8 @@ export async function runBesuDemo() {
     previousCommitmentDigestHex: '00'.repeat(32),
     commitmentDigestHex: checkpointDigest,
     logicalTimestampUs: BigInt(Date.now()) * 1000n,
+    lsn,
+    agentId: 'agent_node_01',
     protocolVersion: 2,
     agentSignatureHex: agentSig.toString('hex'),
     customerSignatureHex: customerSig.toString('hex'),
@@ -118,6 +120,7 @@ export async function runBesuDemo() {
       checkpointDigestHex: checkpointDigest,
       stateMerkleRootHex: witnessedStateMerkleRoot,
       changeChainHeadHex: changeChainHead,
+      agentId: 'agent_node_01',
       agentAttestationHex: agentSig.toString('hex'),
       customerAuthorizationHex: customerSig.toString('hex'),
     },
@@ -137,9 +140,9 @@ export async function runBesuDemo() {
   console.log(`      Receipt Digest: 0x${receipt.receiptDigestHex}`);
 
   // 6. Verify Initial State
-  const initialVerification = UniversalReceiptVerifier.verifyOffline({
+  const initialVerification = await UniversalReceiptVerifier.verifyOffline({
     receipt,
-    customerPublicKey: custPub,
+    customerAddressOrPublicKey: custPub,
     agentPublicKey: agentPub,
     currentDatabaseMerkleRootHex: witnessedStateMerkleRoot,
   });
@@ -162,9 +165,9 @@ export async function runBesuDemo() {
 
   // 8. Zero-Trust Offline Verification after Tamper
   console.log('\n[7/7] Executing Zero-Trust Offline Auditor Verification...');
-  const postTamperVerification = UniversalReceiptVerifier.verifyOffline({
+  const postTamperVerification = await UniversalReceiptVerifier.verifyOffline({
     receipt,
-    customerPublicKey: custPub,
+    customerAddressOrPublicKey: custPub,
     agentPublicKey: agentPub,
     currentDatabaseMerkleRootHex: tamperedStateMerkleRoot,
   });

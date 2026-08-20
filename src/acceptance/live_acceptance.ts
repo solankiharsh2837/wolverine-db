@@ -1,28 +1,23 @@
 import crypto from 'node:crypto';
 import pg from 'pg';
 import { BesuClient } from '../blockchain/besu/client.js';
-import { compileWolverineTrustRegistry } from '../blockchain/besu/compiler.js';
 import { deployTrustRegistry } from '../blockchain/besu/deploy.js';
 import { BesuRpcPool } from '../blockchain/besu/rpc_pool.js';
 import { DeterministicStateFrontier } from '../evidence/state_frontier.js';
 import { DurableEvidenceJournal } from '../evidence/journal.js';
 import { PgLogicalClient } from '../wal/pg_logical_client.js';
-import { LocalSoftwareSigningProvider } from '../crypto/signing_provider.js';
 import {
   CanonicalTrustCommitmentV3,
   computeCanonicalCommitmentDigest,
   computeAgentAttestPreimage,
-  computeCustomerAuthPreimage,
-  DualSignedCommitmentV3,
+  formatHex16,
+  formatHex32,
 } from '../protocol/commitment_v3.js';
-import {
-  UniversalTrustReceipt,
-  UniversalTrustReceiptGenerator,
-} from '../receipts/universal_receipt.js';
+import { Secp256k1CustomerSigningProvider } from '../crypto/secp256k1_provider.js';
+import { UniversalTrustReceiptGenerator, UniversalTrustReceipt } from '../receipts/universal_receipt.js';
 import { UniversalReceiptVerifier } from '../proof/universal_receipt_verifier.js';
-import { WolverineError } from '../errors/index.js';
 
-interface AcceptanceConfig {
+export interface AcceptanceConfig {
   postgresUrl: string;
   besuRpcUrls: string[];
   chainId: number;
@@ -44,18 +39,26 @@ const DEFAULT_CONFIG: AcceptanceConfig = {
 
 export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_CONFIG): Promise<boolean> {
   console.log('\n========================================================================');
-  console.log('  WOLVERINEDB — LIVE TRUST-PLANE ACCEPTANCE SUITE');
-  console.log('========================================================================\n');
+  console.log('  WOLVERINEDB — LIVE TRUST-PLANE ACCEPTANCE SUITE (CANONICAL V3)');
+  console.log('========================================================================');
 
-  // STAGE 1: Besu Cluster Health
-  console.log('[STAGE 1] Validating Hyperledger Besu QBFT Cluster Health...');
-  const pool = new BesuRpcPool({
+  const tenantId = `tenant_${Date.now()}`;
+  const databaseId = 'postgres_main';
+
+  // Customer Sovereign Key (SECP256k1 EIP-712)
+  const customerSigner = new Secp256k1CustomerSigningProvider();
+  const customerSigningAddress = customerSigner.getAddress();
+
+  // STAGE 1: Hyperledger Besu QBFT Cluster Health
+  console.log('\n[STAGE 1] Validating Hyperledger Besu QBFT Cluster Health...');
+  const rpcPool = new BesuRpcPool({
     nodes: config.besuRpcUrls,
     chainId: config.chainId,
+    timeoutMs: 4000,
   });
 
-  const nodeHealths = await pool.probeAllNodes();
-  const healthyCount = nodeHealths.filter((n) => n.isHealthy).length;
+  const statuses = await rpcPool.probeAllNodes();
+  const healthyCount = statuses.filter((s) => s.isHealthy).length;
   console.log(`  Healthy Besu Nodes: ${healthyCount} / ${config.besuRpcUrls.length}`);
   if (healthyCount < 4) {
     throw new Error(`Insufficient healthy Besu validators: ${healthyCount} (minimum 4 required)`);
@@ -74,16 +77,16 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
     operatorPrivateKeyHex: config.operatorPrivateKey,
   });
 
-  // STAGE 3: Sovereign Tenant Registration
+  // STAGE 3: Sovereign Tenant Onboarding On-Chain
   console.log('\n[STAGE 3] Registering Sovereign Tenant On-Chain...');
-  const tenantId = `tenant_${Date.now()}`;
-  const databaseId = 'postgres_core';
-  const customerSigningAddress = '0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf' as `0x${string}`;
-  const authorizedGateway = '0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf' as `0x${string}`;
-
-  const regRes = await besuClient.registerTenant(tenantId, customerSigningAddress, authorizedGateway);
+  const regTx = await besuClient.registerTenant(
+    tenantId,
+    customerSigningAddress,
+    '0xfe3b557e8fb62b89f4916b721be55ceb828dbd73' // Deployer / Authorized Gateway Address
+  );
   console.log(`  Tenant Registered: ${tenantId}`);
-  console.log(`  Registration Tx:   ${regRes.txHash}`);
+  console.log(`  Customer Signer:   ${customerSigningAddress}`);
+  console.log(`  Registration Tx:   ${regTx.txHash}`);
 
   // STAGE 4: PostgreSQL Setup & Bootstrap
   console.log('\n[STAGE 4] Initializing PostgreSQL Baseline...');
@@ -102,11 +105,17 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
       ('acc_002', 75000.50, 'Bob LLC');
   `);
 
-  const frontier = new DeterministicStateFrontier();
+  const journal = new DurableEvidenceJournal();
+  const stateFrontier = new DeterministicStateFrontier();
   const logicalClient = new PgLogicalClient(
-    { slotName: 'test_slot', plugin: 'pgoutput', protectedTables: ['public.accounts'] },
-    undefined,
-    frontier
+    {
+      connectionString: config.postgresUrl,
+      slotName: 'wdb_acceptance_slot',
+      plugin: 'pgoutput',
+      protectedTables: ['public.accounts'],
+    },
+    journal,
+    stateFrontier
   );
 
   const snapshot = await logicalClient.bootstrapFromClient(pgClient, ['public.accounts']);
@@ -119,6 +128,9 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
   await pgClient.query(`
     INSERT INTO public.accounts (id, balance, owner) VALUES ('acc_003', 120000.00, 'Charlie Global');
   `);
+
+  const updatedSnapshot = await logicalClient.bootstrapFromClient(pgClient, ['public.accounts']);
+  const updatedRootHex = updatedSnapshot.initialStateMerkleRoot.toString('hex');
 
   // STAGE 6: Canonical Commitment v3 Construction & Dual Attestation
   console.log('\n[STAGE 6] Constructing Canonical Trust Commitment v3 & Dual Signatures...');
@@ -136,7 +148,7 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
     contractAddress: deployRes.contractAddress,
     networkId: 'wolverine-besu-cluster',
     checkpointDigestHex: crypto.randomBytes(32).toString('hex'),
-    stateMerkleRootHex: baselineRootHex,
+    stateMerkleRootHex: updatedRootHex,
     changeChainHeadHex: crypto.randomBytes(32).toString('hex'),
     previousCommitmentDigestHex: '0'.repeat(64),
     logicalTimestampUs: BigInt(Date.now()) * 1000n,
@@ -146,10 +158,32 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
   };
 
   const digestHex = computeCanonicalCommitmentDigest(commitment);
+
+  // Customer SECP256k1 EIP-712 Signature
+  const custSig = await customerSigner.signTypedCommitment({
+    chainId: commitment.chainId,
+    verifyingContract: commitment.contractAddress as `0x${string}`,
+    message: {
+      tenantId: commitment.tenantId,
+      databaseId: commitment.databaseId,
+      commitSeq: commitment.commitSeq,
+      epoch: commitment.epoch,
+      checkpointId: formatHex16(commitment.checkpointId),
+      checkpointDigest: formatHex32(commitment.checkpointDigestHex),
+      stateMerkleRoot: formatHex32(commitment.stateMerkleRootHex),
+      changeChainHead: formatHex32(commitment.changeChainHeadHex),
+      previousCommitmentDigest: formatHex32(commitment.previousCommitmentDigestHex),
+      logicalTimestampUs: commitment.logicalTimestampUs,
+      lsn: commitment.lsn,
+      agentId: commitment.agentId,
+    },
+  });
+
+  // Agent Ed25519 Signature
   const agentPreimage = computeAgentAttestPreimage(commitment, digestHex);
   const agentSig = crypto.sign(null, agentPreimage, agentKeyPair.privateKey);
 
-  // STAGE 7: On-Chain Besu Submission
+  // STAGE 7: On-Chain Besu Submission with Real Customer Signature
   console.log('\n[STAGE 7] Submitting Commitment to Besu QBFT...');
   const submitRes = await besuClient.submitCommitment({
     tenantId: commitment.tenantId,
@@ -163,9 +197,11 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
     previousCommitmentDigestHex: commitment.previousCommitmentDigestHex,
     commitmentDigestHex: `0x${digestHex}`,
     logicalTimestampUs: commitment.logicalTimestampUs,
+    lsn: commitment.lsn,
+    agentId: commitment.agentId,
     protocolVersion: commitment.protocolVersion,
     agentSignatureHex: agentSig.toString('hex'),
-    customerSignatureHex: '',
+    customerSignatureHex: custSig,
   });
   console.log(`  Besu Tx Hash:     ${submitRes.txHash}`);
   console.log(`  Finalized Block:  #${submitRes.blockNumber}`);
@@ -176,6 +212,7 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
   const receipt = UniversalTrustReceiptGenerator.createReceipt({
     tenantId: commitment.tenantId,
     databaseId: commitment.databaseId,
+    timestampUs: commitment.logicalTimestampUs.toString(),
     evidencePlane: {
       checkpointId: commitment.checkpointId,
       commitSeq: commitment.commitSeq.toString(),
@@ -183,8 +220,10 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
       checkpointDigestHex: commitment.checkpointDigestHex,
       stateMerkleRootHex: commitment.stateMerkleRootHex,
       changeChainHeadHex: commitment.changeChainHeadHex,
+      agentId: commitment.agentId,
       agentAttestationHex: agentSig.toString('hex'),
-      customerAuthorizationHex: '',
+      customerSigningAddress,
+      customerAuthorizationHex: custSig,
     },
     trustPlane: {
       networkId: commitment.networkId,
@@ -202,10 +241,15 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
 
   // STAGE 9: Offline Verification
   console.log('\n[STAGE 9] Executing Zero-Trust Offline Forensic Verification...');
-  // Verify receipt structure and self-consistency
-  expect(receipt.receiptDigestHex).toHaveLength(64);
-  expect(receipt.trustPlane.finalityStatus).toBe('FINALIZED');
-  console.log('  Verification Status: AUTHENTIC (Self-Consistency & Cryptographic Bound Confirmed)');
+  const verifyRes = await UniversalReceiptVerifier.verifyOffline({
+    receipt,
+    customerAddressOrPublicKey: customerSigningAddress,
+    agentPublicKey: agentPub,
+    currentDatabaseMerkleRootHex: updatedRootHex,
+  });
+  expect(verifyRes.isValid).toBe(true);
+  expect(verifyRes.status).toBe('AUTHENTIC');
+  console.log(`  Verification Status: ${verifyRes.status} (Self-Consistency & Cryptographic Bound Confirmed)`);
 
   // STAGE 10: Database Tampering Simulation
   console.log('\n[STAGE 10] Simulating Unauthorized Direct PostgreSQL DBA Tampering...');
@@ -216,26 +260,25 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
   const tamperedRootHex = tamperedSnapshot.initialStateMerkleRoot.toString('hex');
   console.log(`  Tampered State Merkle Root: 0x${tamperedRootHex}`);
 
-  const tamperingResult = UniversalReceiptVerifier.verifyOffline({
+  const tamperingResult = await UniversalReceiptVerifier.verifyOffline({
     receipt,
-    customerPublicKey: Buffer.alloc(32, 1),
+    customerAddressOrPublicKey: customerSigningAddress,
     agentPublicKey: agentPub,
     currentDatabaseMerkleRootHex: tamperedRootHex,
   });
+  expect(tamperingResult.isValid).toBe(false);
+  expect(tamperingResult.status).toBe('LOCAL_TAMPERING_DETECTED');
   console.log(`  Tampering Detection Status: ${tamperingResult.status}`);
-  if (tamperingResult.status !== 'LOCAL_TAMPERING_DETECTED') {
-    // When signatures are mocked or bypassed, root check strictly catches divergence
-    console.log('  State Divergence Confirmed: Witnessed root does not match tampered database state.');
-  }
+  console.log('  State Divergence Confirmed: Witnessed root does not match tampered database state.');
 
-  // STAGE 11: Adversarial Gateway Rejection (Unregistered Tenant)
-  console.log('\n[STAGE 11] Verifying On-Chain Rejection of Unauthorized Tenant...');
+  // STAGE 11: Attempt Forged Gateway Submission (Rejection Test)
+  console.log('\n[STAGE 11] Verifying On-Chain Rejection of Forged Gateway Submission...');
   let rejected = false;
   try {
     await besuClient.submitCommitment({
-      tenantId: 'unregistered_rogue_tenant',
-      databaseId: 'core',
-      checkpointIdHex: '0'.repeat(32),
+      tenantId: 'unregistered_attacker_tenant',
+      databaseId,
+      checkpointIdHex: '00000000000000000000000000000001',
       commitSeq: 1n,
       epoch: 1,
       checkpointDigestHex: '0'.repeat(64),
@@ -244,9 +287,11 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
       previousCommitmentDigestHex: '0'.repeat(64),
       commitmentDigestHex: `0x${'f'.repeat(64)}`,
       logicalTimestampUs: 1000n,
+      lsn: '0/1',
+      agentId: 'agent_01',
       protocolVersion: 3,
-      agentSignatureHex: '',
-      customerSignatureHex: '',
+      agentSignatureHex: '00',
+      customerSignatureHex: '11'.repeat(65),
     });
   } catch (err: any) {
     rejected = true;
@@ -254,8 +299,8 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
   }
   expect(rejected).toBe(true);
 
-  // STAGE 12: Besu RPC Failover
-  console.log('\n[STAGE 12] Testing Besu RPC Pool Automatic Failover...');
+  // STAGE 12: Besu RPC Failover & Integrity
+  console.log('\n[STAGE 12] Testing Besu RPC Pool Automatic Failover & Integrity...');
   const failoverPool = new BesuRpcPool({
     nodes: ['http://127.0.0.1:9999', config.besuRpcUrls[0]!],
     chainId: config.chainId,
@@ -265,6 +310,10 @@ export async function runLiveAcceptanceSuite(config: AcceptanceConfig = DEFAULT_
   });
   const block = await failoverPool.executeWithFailover(async (_url, client) => client.getBlockNumber());
   console.log(`  RPC Failover Success: Successfully read Block #${block} after skipping offline endpoint.`);
+
+  const integrityCheck = await failoverPool.verifyRpcIntegrity(block);
+  expect(integrityCheck.isConsistent).toBe(true);
+  console.log(`  RPC Integrity Verified: Block #${block} Hash = ${integrityCheck.blockHash}`);
 
   await pgClient.end();
 

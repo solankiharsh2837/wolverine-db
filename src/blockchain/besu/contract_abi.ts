@@ -44,23 +44,39 @@ export const WOLVERINE_TRUST_REGISTRY_ABI = [
         "type": "bytes32"
       }
     ],
-    "name": "InvalidDigestBinding",
+    "name": "InvalidPreviousCommitment",
     "type": "error"
   },
   {
     "inputs": [
       {
-        "internalType": "bytes32",
+        "internalType": "uint256",
         "name": "expected",
-        "type": "bytes32"
+        "type": "uint256"
       },
       {
-        "internalType": "bytes32",
+        "internalType": "uint256",
         "name": "received",
-        "type": "bytes32"
+        "type": "uint256"
       }
     ],
-    "name": "InvalidPreviousCommitment",
+    "name": "InvalidRotationNonce",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "recoveredSigner",
+        "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "expectedSigner",
+        "type": "address"
+      }
+    ],
+    "name": "InvalidRotationSignature",
     "type": "error"
   },
   {
@@ -176,6 +192,37 @@ export const WOLVERINE_TRUST_REGISTRY_ABI = [
     "inputs": [
       {
         "indexed": true,
+        "internalType": "string",
+        "name": "tenantId",
+        "type": "string"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "oldCustomerSigningAddress",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newCustomerSigningAddress",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "blockNumber",
+        "type": "uint256"
+      }
+    ],
+    "name": "CustomerKeyRotated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "uint32",
         "name": "oldEpoch",
         "type": "uint32"
@@ -259,6 +306,45 @@ export const WOLVERINE_TRUST_REGISTRY_ABI = [
     "type": "event"
   },
   {
+    "inputs": [],
+    "name": "COMMITMENT_TYPEHASH",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "DOMAIN_TYPEHASH",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "ROTATION_TYPEHASH",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "uint32",
@@ -319,14 +405,19 @@ export const WOLVERINE_TRUST_REGISTRY_ABI = [
         "type": "bytes32"
       },
       {
-        "internalType": "bytes32",
-        "name": "commitmentDigest",
-        "type": "bytes32"
-      },
-      {
         "internalType": "uint64",
         "name": "logicalTimestampUs",
         "type": "uint64"
+      },
+      {
+        "internalType": "string",
+        "name": "lsn",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "agentId",
+        "type": "string"
       },
       {
         "internalType": "uint16",
@@ -363,6 +454,19 @@ export const WOLVERINE_TRUST_REGISTRY_ABI = [
         "internalType": "uint32",
         "name": "",
         "type": "uint32"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "domainSeparator",
+    "outputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
       }
     ],
     "stateMutability": "view",
@@ -794,6 +898,53 @@ export const WOLVERINE_TRUST_REGISTRY_ABI = [
     "name": "registerTenant",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "tenantId",
+        "type": "string"
+      },
+      {
+        "internalType": "address",
+        "name": "newCustomerSigningAddress",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "nonce",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes",
+        "name": "rotationSignature",
+        "type": "bytes"
+      }
+    ],
+    "name": "rotateCustomerKey",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "",
+        "type": "string"
+      }
+    ],
+    "name": "tenantNonces",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   }
 ] as const;

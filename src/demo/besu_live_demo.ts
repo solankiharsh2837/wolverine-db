@@ -139,6 +139,8 @@ export async function runBesuLiveDemo() {
     previousCommitmentDigestHex: '00'.repeat(32),
     commitmentDigestHex: checkpointDigest,
     logicalTimestampUs: BigInt(Date.now()) * 1000n,
+    lsn,
+    agentId: 'agent_node_01',
     protocolVersion: 2,
     agentSignatureHex: agentSig.toString('hex'),
     customerSignatureHex: customerSig.toString('hex'),
@@ -161,6 +163,7 @@ export async function runBesuLiveDemo() {
       checkpointDigestHex: checkpointDigest,
       stateMerkleRootHex: witnessedStateMerkleRoot,
       changeChainHeadHex: changeChainHead,
+      agentId: 'agent_node_01',
       agentAttestationHex: agentSig.toString('hex'),
       customerAuthorizationHex: customerSig.toString('hex'),
     },
@@ -191,9 +194,9 @@ export async function runBesuLiveDemo() {
   const tamperedMerkleTree = new MerkleTree([tamperedRowBytes]);
   const tamperedStateMerkleRoot = tamperedMerkleTree.root.toString('hex');
 
-  const offlineAudit = UniversalReceiptVerifier.verifyOffline({
+  const offlineAudit = await UniversalReceiptVerifier.verifyOffline({
     receipt,
-    customerPublicKey: custPub,
+    customerAddressOrPublicKey: custPub,
     agentPublicKey: agentPub,
     currentDatabaseMerkleRootHex: tamperedStateMerkleRoot,
   });

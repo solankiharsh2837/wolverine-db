@@ -9,7 +9,9 @@ export interface EvidencePlaneReceiptData {
   checkpointDigestHex: string;
   stateMerkleRootHex: string;
   changeChainHeadHex: string;
+  agentId?: string;
   agentAttestationHex: string;
+  customerSigningAddress?: string;
   customerAuthorizationHex: string;
 }
 
@@ -34,7 +36,7 @@ export interface OptionalPublicAnchorData {
 }
 
 export interface UniversalTrustReceipt {
-  receiptVersion: number; // 2
+  receiptVersion: number; // 2 or 3
   receiptId: string;
   tenantId: string;
   databaseId: string;
@@ -48,7 +50,7 @@ export interface UniversalTrustReceipt {
 export function computeReceiptDigest(
   receipt: Omit<UniversalTrustReceipt, 'receiptDigestHex'>
 ): Buffer {
-  const domain = Buffer.from('WDB:UNIVERSAL_RECEIPT:v2:', 'utf8');
+  const domain = Buffer.from('WDB:UNIVERSAL_RECEIPT:v3:', 'utf8');
   const canonicalJson = canonicalizeJson({
     receiptVersion: receipt.receiptVersion,
     receiptId: receipt.receiptId,
@@ -70,15 +72,16 @@ export class UniversalTrustReceiptGenerator {
   public static createReceipt(params: {
     tenantId: string;
     databaseId: string;
+    timestampUs?: string;
     evidencePlane: EvidencePlaneReceiptData;
     trustPlane: TrustPlaneReceiptData;
     optionalPublicAnchor?: OptionalPublicAnchorData;
   }): UniversalTrustReceipt {
-    const timestampUs = (BigInt(Date.now()) * 1000n).toString();
+    const timestampUs = params.timestampUs ?? (BigInt(Date.now()) * 1000n).toString();
     const receiptId = crypto.randomUUID();
 
     const base = {
-      receiptVersion: 2,
+      receiptVersion: 3,
       receiptId,
       tenantId: params.tenantId,
       databaseId: params.databaseId,

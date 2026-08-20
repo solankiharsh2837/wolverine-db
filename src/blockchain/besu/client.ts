@@ -180,8 +180,9 @@ export class BesuClient {
           padHex32(input.stateMerkleRootHex),
           padHex32(input.changeChainHeadHex),
           padHex32(input.previousCommitmentDigestHex),
-          padHex32(input.commitmentDigestHex),
           input.logicalTimestampUs,
+          input.lsn,
+          input.agentId,
           input.protocolVersion,
           formatBytes(input.agentSignatureHex),
           formatBytes(input.customerSignatureHex),
@@ -213,6 +214,53 @@ export class BesuClient {
       throw new WolverineError(
         WolverineErrorCode.NETWORK_ERROR,
         `Failed to submit commitment to Besu: ${err.message}`
+      );
+    }
+  }
+
+  /**
+   * Rotates a tenant's customer signing address on-chain.
+   */
+  public async rotateCustomerKey(
+    tenantId: string,
+    newCustomerSigningAddress: `0x${string}`,
+    nonce: bigint,
+    rotationSignatureHex: `0x${string}`
+  ): Promise<{ txHash: `0x${string}`; blockNumber: bigint }> {
+    if (this.customRpcHandler) {
+      return this.customRpcHandler('rotateCustomerKey', [tenantId, newCustomerSigningAddress, nonce, rotationSignatureHex]);
+    }
+
+    if (!this.walletClient || !this.publicClient) {
+      throw new WolverineError(
+        WolverineErrorCode.INVALID_CONFIGURATION,
+        'BesuClient requires walletClient and publicClient to rotate key'
+      );
+    }
+
+    try {
+      const { request } = await this.publicClient.simulateContract({
+        account: this.walletClient.account,
+        address: this.config.contractAddress,
+        abi: WOLVERINE_TRUST_REGISTRY_ABI,
+        functionName: 'rotateCustomerKey',
+        args: [tenantId, newCustomerSigningAddress, nonce, rotationSignatureHex],
+      });
+
+      const txHash = await this.walletClient.writeContract(request);
+      const receipt = await this.publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        confirmations: 1,
+      });
+
+      return {
+        txHash: receipt.transactionHash,
+        blockNumber: receipt.blockNumber,
+      };
+    } catch (err: any) {
+      throw new WolverineError(
+        WolverineErrorCode.NETWORK_ERROR,
+        `Failed to rotate customer key on Besu: ${err.message}`
       );
     }
   }

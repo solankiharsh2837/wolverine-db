@@ -220,4 +220,51 @@ export class BesuRpcPool {
 
     return results;
   }
+
+  /**
+   * Cross-checks multiple RPC endpoints for block hash and state consistency to guarantee RPC integrity.
+   * Detects and rejects RPC_INTEGRITY_DIVERGENCE across nodes.
+   */
+  public async verifyRpcIntegrity(blockNumber: bigint): Promise<{ isConsistent: boolean; blockHash: `0x${string}`; divergences?: string[] }> {
+    const healthyNodes = this.getHealthyNodes();
+    if (healthyNodes.length <= 1) {
+      const client = this.createClientForNode(this.getNextNodeUrl());
+      const block = await client.getBlock({ blockNumber });
+      return { isConsistent: true, blockHash: block.hash! };
+    }
+
+    const hashes: Array<{ url: string; blockHash: `0x${string}` }> = [];
+    for (const url of healthyNodes.slice(0, 3)) {
+      try {
+        const client = this.createClientForNode(url);
+        const block = await client.getBlock({ blockNumber });
+        if (block && block.hash) {
+          hashes.push({ url, blockHash: block.hash });
+        }
+      } catch {
+        // skip unresponsive node during cross-check
+      }
+    }
+
+    if (hashes.length === 0) {
+      throw new WolverineError(
+        WolverineErrorCode.NETWORK_ERROR,
+        `Failed to cross-check block #${blockNumber} on any healthy node`
+      );
+    }
+
+    const primaryHash = hashes[0]!.blockHash;
+    const divergent = hashes.filter((h) => h.blockHash !== primaryHash);
+
+    if (divergent.length > 0) {
+      throw new WolverineError(
+        WolverineErrorCode.HISTORY_MUTATION_DETECTED,
+        `[RPC_INTEGRITY_DIVERGENCE] RPC nodes returned divergent block hashes for block #${blockNumber}: ` +
+          hashes.map((h) => `${h.url}=>${h.blockHash}`).join(', ')
+      );
+    }
+
+    return { isConsistent: true, blockHash: primaryHash };
+  }
 }
+
